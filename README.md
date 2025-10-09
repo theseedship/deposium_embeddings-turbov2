@@ -1,22 +1,31 @@
-# Deposium Embeddings TurboX.v2
+# Deposium Embeddings - Dual Model Service
 
-Ultra-fast static embeddings service using Model2Vec for CPU-optimized inference.
+Ultra-fast static embeddings service with **two models** using Model2Vec for CPU-optimized inference.
 
 ## 🚀 Features
 
+- **Dual model support:** TurboX.v2 (1024D) + int8 (256D)
 - **500x faster** than traditional transformers on CPU
 - **50x smaller** model size (~30MB vs 639MB)
 - **Ollama-compatible API** - drop-in replacement
 - **Static embeddings** - no GPU required
 - **FastAPI** backend with health checks
 
-## 📊 Model Info
+## 📊 Available Models
 
-- **Base Model:** C10X/Qwen3-Embedding-TurboX.v2
+### TurboX.v2 (1024 dimensions)
+- **HuggingFace:** C10X/Qwen3-Embedding-TurboX.v2
+- **Base:** Qwen3-Embedding-0.6B
 - **Type:** Static embeddings (Model2Vec)
 - **Size:** ~30MB
-- **Dimensions:** Auto-detected (likely 256-512)
-- **Context:** 32K tokens max
+- **Use case:** General-purpose embeddings, semantic search
+
+### int8 (256 dimensions)
+- **HuggingFace:** C10X/int8
+- **Base:** Qwen3-Reranker-0.6B
+- **Type:** Static embeddings (Model2Vec)
+- **Size:** ~30MB
+- **Use case:** Lightweight embeddings, reranking optimization
 
 ## 🐳 Docker Usage
 
@@ -38,10 +47,15 @@ curl http://localhost:11435/health
 # List models
 curl http://localhost:11435/api/tags
 
-# Generate embedding
+# Generate embedding with TurboX.v2 (1024D)
 curl -X POST http://localhost:11435/api/embed \
   -H "Content-Type: application/json" \
   -d '{"model":"turbov2","input":"test embedding"}'
+
+# Generate embedding with int8 (256D)
+curl -X POST http://localhost:11435/api/embed \
+  -H "Content-Type: application/json" \
+  -d '{"model":"int8","input":"test embedding"}'
 ```
 
 ## 🔌 API Endpoints
@@ -56,29 +70,43 @@ Health check endpoint
 List available models (Ollama-compatible)
 
 ### `POST /api/embed`
-Generate embeddings
+Generate embeddings with model selection
 
 **Request:**
 ```json
 {
-  "model": "turbov2",
+  "model": "turbov2",  // or "int8"
   "input": "your text here"
 }
 ```
 
-**Response:**
+**Response (turbov2 - 1024D):**
 ```json
 {
   "model": "turbov2",
-  "embeddings": [[0.123, -0.456, ...]]
+  "embeddings": [[0.123, -0.456, ...]]  // 1024 dimensions
+}
+```
+
+**Response (int8 - 256D):**
+```json
+{
+  "model": "int8",
+  "embeddings": [[0.123, -0.456, ...]]  // 256 dimensions
 }
 ```
 
 ## 🔧 Integration with N8N
 
+### TurboX.v2 (1024D)
 Configure N8N Ollama credentials:
 - **Base URL:** `http://deposium-embeddings-turbov2:11435`
 - **Model Name:** `turbov2`
+
+### int8 (256D)
+Configure N8N Ollama credentials:
+- **Base URL:** `http://deposium-embeddings-turbov2:11435`
+- **Model Name:** `int8`
 
 ## 📈 Performance
 
