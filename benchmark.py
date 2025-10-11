@@ -2,7 +2,6 @@
 
 import requests
 import time
-import json
 
 # Colors
 GREEN = '\033[0;32m'
@@ -23,7 +22,8 @@ print(f"{YELLOW}🚀 TurboX.v2 (localhost:11435){NC}")
 start = time.time()
 response = requests.post(
     "http://localhost:11435/api/embed",
-    json={"model": "turbov2", "input": "semantic search test"}
+    json={"model": "turbov2", "input": "semantic search test"},
+    timeout=10
 )
 turbov2_latency = int((time.time() - start) * 1000)
 turbov2_data = response.json()
@@ -36,7 +36,8 @@ print(f"{YELLOW}🐳 Qwen3-Embedding:0.6b (172.20.0.11:11434){NC}")
 start = time.time()
 response = requests.post(
     "http://172.20.0.11:11434/api/embed",
-    json={"model": "qwen3-embedding:0.6b", "input": "semantic search test"}
+    json={"model": "qwen3-embedding:0.6b", "input": "semantic search test"},
+    timeout=10
 )
 qwen_latency = int((time.time() - start) * 1000)
 qwen_data = response.json()
@@ -67,7 +68,8 @@ print(f"{YELLOW}🚀 TurboX.v2 (batch){NC}")
 start = time.time()
 response = requests.post(
     "http://localhost:11435/api/embed",
-    json={"model": "turbov2", "input": batch_texts}
+    json={"model": "turbov2", "input": batch_texts},
+    timeout=30
 )
 turbov2_batch_latency = int((time.time() - start) * 1000)
 turbov2_batch_count = len(response.json()['embeddings'])
@@ -81,11 +83,12 @@ start = time.time()
 for text in batch_texts:
     requests.post(
         "http://172.20.0.11:11434/api/embed",
-        json={"model": "qwen3-embedding:0.6b", "input": text}
+        json={"model": "qwen3-embedding:0.6b", "input": text},
+        timeout=10
     )
 qwen_batch_latency = int((time.time() - start) * 1000)
 print(f"  ✅ Total latency: {qwen_batch_latency}ms")
-print(f"  ✅ Embeddings: 5")
+print("  ✅ Embeddings: 5")
 print(f"  ✅ Per embedding: {qwen_batch_latency // 5}ms avg")
 print()
 
