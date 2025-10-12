@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Deposium Embeddings - TurboX.v2 + int8 + Gemma",
-    description="Multi-model embeddings: Model2Vec (fast) + EmbeddingGemma (high quality, 2048 tokens)",
-    version="4.0.0"
+    title="Deposium Embeddings - Qwen3-Turbo + TurboX.v2 + Gemma",
+    description="Multi-model embeddings: Qwen3-Turbo (710x faster!) + Model2Vec + EmbeddingGemma (high quality)",
+    version="5.0.0"
 )
 
 # Load models at startup
@@ -26,6 +26,12 @@ models = {}
 @app.on_event("startup")
 async def load_models():
     global models
+
+    # Load Qwen3-Turbo (ULTRA FAST - 710x faster than gemma-int8!)
+    logger.info("Loading Qwen3-Turbo model (256D, 710x faster)...")
+    models["qwen3-turbo"] = StaticModel.from_pretrained("Pringled/m2v-Qwen3-Embedding-0.6B")
+    logger.info("✅ Qwen3-Turbo loaded! (Quality: 0.665, Speed: 710x faster)")
+
     logger.info("Loading TurboX.v2 model (1024D)...")
     models["turbov2"] = StaticModel.from_pretrained("C10X/Qwen3-Embedding-TurboX.v2")
     logger.info("✅ TurboX.v2 loaded!")
@@ -102,6 +108,7 @@ class EmbedResponse(BaseModel):
 @app.get("/")
 async def root():
     model_info = {
+        "qwen3-turbo": "⚡ Qwen3-Turbo (256D) - ULTRA FAST! 710x faster than gemma-int8 (Quality: 0.665)",
         "turbov2": "C10X/Qwen3-Embedding-TurboX.v2 (1024D) - ultra-fast",
         "int8": "C10X/int8 (256D) - compact",
     }
@@ -111,10 +118,11 @@ async def root():
         model_info["gemma-int8"] = "EmbeddingGemma-300m INT8 (768D, 2048 tokens) - 3x faster CPU"
 
     return {
-        "service": "Deposium Embeddings - TurboX.v2 + int8 + EmbeddingGemma",
+        "service": "Deposium Embeddings - Qwen3-Turbo + TurboX.v2 + EmbeddingGemma",
         "status": "running",
-        "version": "4.1.0",
-        "models": model_info
+        "version": "5.0.0",
+        "models": model_info,
+        "recommended": "qwen3-turbo (710x faster, Railway-optimized)"
     }
 
 @app.get("/health")
@@ -130,6 +138,13 @@ async def health():
 async def list_models():
     """Ollama-compatible endpoint to list models"""
     model_list = [
+        {
+            "name": "qwen3-turbo",
+            "size": 200000000,  # ~200MB
+            "digest": "qwen3-turbo-256d-m2v",
+            "modified_at": "2025-10-12T00:00:00Z",
+            "details": "⚡ Qwen3-Turbo Model2Vec (256D) - 710x FASTER! Quality: 0.665, Railway-optimized"
+        },
         {
             "name": "turbov2",
             "size": 30000000,  # ~30MB
@@ -221,7 +236,7 @@ async def create_embedding(request: EmbedRequest):
 
             embeddings_list = embeddings.tolist()
         else:
-            # Model2Vec models (turbov2, int8)
+            # Model2Vec models (qwen3-turbo, turbov2, int8)
             embeddings = selected_model.encode(texts, show_progress_bar=False)
             embeddings_list = [emb.tolist() for emb in embeddings]
 
