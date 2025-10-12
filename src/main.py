@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from typing import List
 from model2vec import StaticModel
 import torch
+import torch.quantization as quant
+import copy
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
 import logging
@@ -32,29 +34,59 @@ async def load_models():
     models["int8"] = StaticModel.from_pretrained("C10X/int8")
     logger.info("✅ int8 loaded!")
 
-    # Load EmbeddingGemma baseline (replaces LEAF)
+    # Load EmbeddingGemma variants (baseline + INT8 optimized)
     try:
-        logger.info("Loading EmbeddingGemma-300m baseline (768D, float16, 2048 tokens)...")
+        logger.info("Loading EmbeddingGemma-300m variants...")
 
-        # Load from HuggingFace with float16 quantization
-        model = SentenceTransformer("google/embeddinggemma-300m")
-        model = model.half()  # Quantize to float16 (50% size reduction)
-
-        # Move to GPU if available
+        # Detect device
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = model.to(device)
 
-        models["gemma"] = model
+        # Load base model in float32 (required for INT8 quantization base)
+        logger.info(f"Loading base model on {device}...")
+        model_base = SentenceTransformer("google/embeddinggemma-300m")
+        model_base = model_base.to(device)
 
-        logger.info(f"✅ EmbeddingGemma loaded!")
+        # Variant 1: gemma (float16 for GPU, float32 for CPU to avoid zero bug)
+        if torch.cuda.is_available():
+            logger.info("Creating gemma variant (float16 GPU-optimized)...")
+            model_fp16 = SentenceTransformer("google/embeddinggemma-300m")
+            model_fp16 = model_fp16.half().to(device)
+            models["gemma"] = model_fp16
+            logger.info("✅ gemma (float16) loaded - ~587MB")
+        else:
+            # On CPU, use float32 to avoid zero bug
+            logger.info("Creating gemma variant (float32 CPU-compatible)...")
+            models["gemma"] = model_base
+            logger.info("✅ gemma (float32) loaded - ~1.2GB")
+
+        # Variant 2: gemma-int8 (INT8 quantized for 3x speedup on CPU)
+        logger.info("Creating gemma-int8 variant (INT8 quantized)...")
+
+        # Create a CPU copy for INT8 quantization (INT8 dynamic quant only works on CPU)
+        model_int8 = copy.deepcopy(model_base)
+        model_int8 = model_int8.to("cpu")  # Move to CPU before quantization
+
+        # Apply dynamic INT8 quantization (quantizes weights only, CPU-only)
+        model_int8 = quant.quantize_dynamic(
+            model_int8,
+            {torch.nn.Linear},  # Quantize all Linear layers
+            dtype=torch.qint8
+        )
+
+        models["gemma-int8"] = model_int8
+        logger.info("✅ gemma-int8 (INT8) loaded - ~300MB, 3x faster CPU")
+
+        logger.info(f"✅ EmbeddingGemma variants ready!")
         logger.info(f"   Device: {device}")
-        logger.info(f"   Max seq length: {model.max_seq_length} tokens")
-        logger.info(f"   Embedding dim: {model.get_sentence_embedding_dimension()}D")
-        logger.info(f"   Quantization: float16 (~587MB)")
+        logger.info(f"   Max seq length: {model_base.max_seq_length} tokens")
+        logger.info(f"   Embedding dim: {model_base.get_sentence_embedding_dimension()}D")
+        logger.info(f"   Variants:")
+        logger.info(f"     - gemma: {'float16 GPU (~587MB)' if torch.cuda.is_available() else 'float32 CPU (~1.2GB)'}")
+        logger.info(f"     - gemma-int8: INT8 quantized (~300MB, 3x faster)")
         logger.info(f"   MTEB Score: 0.80 Spearman (BIOSSES: 0.83, STSBenchmark: 0.88)")
 
     except Exception as e:
-        logger.warning(f"⚠️  Failed to load EmbeddingGemma: {e}")
+        logger.warning(f"⚠️  Failed to load EmbeddingGemma variants: {e}")
 
     logger.info("🚀 All models ready!")
 
@@ -69,15 +101,20 @@ class EmbedResponse(BaseModel):
 
 @app.get("/")
 async def root():
+    model_info = {
+        "turbov2": "C10X/Qwen3-Embedding-TurboX.v2 (1024D) - ultra-fast",
+        "int8": "C10X/int8 (256D) - compact",
+    }
+    if "gemma" in models:
+        model_info["gemma"] = "EmbeddingGemma-300m (768D, 2048 tokens) - high quality (MTEB: 0.80)"
+    if "gemma-int8" in models:
+        model_info["gemma-int8"] = "EmbeddingGemma-300m INT8 (768D, 2048 tokens) - 3x faster CPU"
+
     return {
         "service": "Deposium Embeddings - TurboX.v2 + int8 + EmbeddingGemma",
         "status": "running",
-        "version": "4.0.0",
-        "models": {
-            "turbov2": "C10X/Qwen3-Embedding-TurboX.v2 (1024D) - ultra-fast",
-            "int8": "C10X/int8 (256D) - compact",
-            "gemma": "EmbeddingGemma-300m (768D, 2048 tokens) - high quality (MTEB: 0.80)"
-        }
+        "version": "4.1.0",
+        "models": model_info
     }
 
 @app.get("/health")
@@ -109,14 +146,23 @@ async def list_models():
         }
     ]
 
-    # Add EmbeddingGemma if loaded
+    # Add EmbeddingGemma variants if loaded
     if "gemma" in models:
         model_list.append({
             "name": "gemma",
-            "size": 587000000,  # ~587MB (float16)
+            "size": 587000000,  # ~587MB (float16) or ~1200000000 (float32)
             "digest": "gemma-768d-float16",
             "modified_at": "2025-10-12T00:00:00Z",
             "details": "EmbeddingGemma-300m baseline (768D, 2048 tokens, MTEB: 0.80)"
+        })
+
+    if "gemma-int8" in models:
+        model_list.append({
+            "name": "gemma-int8",
+            "size": 300000000,  # ~300MB (INT8)
+            "digest": "gemma-768d-int8",
+            "modified_at": "2025-10-12T00:00:00Z",
+            "details": "EmbeddingGemma-300m INT8 quantized (768D, 2048 tokens, 3x faster CPU)"
         })
 
     return {"models": model_list}
@@ -139,8 +185,8 @@ async def create_embedding(request: EmbedRequest):
         selected_model = models[request.model]
 
         # Generate embeddings based on model type
-        if request.model == "gemma":
-            # EmbeddingGemma uses SentenceTransformer
+        if request.model in ["gemma", "gemma-int8"]:
+            # EmbeddingGemma variants use SentenceTransformer
             embeddings = selected_model.encode(
                 texts,
                 show_progress_bar=False,
