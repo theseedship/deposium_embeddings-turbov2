@@ -8,12 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY src/ ./src/
 
-# Copy Gemma-768D Model2Vec (PRIMARY MODEL - ~400MB)
-COPY models/gemma-deposium-768d/ ./models/gemma-deposium-768d/
-
-# Note: Other models downloaded from Hugging Face at startup:
-# - int8 reranker ~30MB
-# Total image size with Gemma-768D: ~600MB
+# Note: Models downloaded from Hugging Face at startup:
+# - Gemma-768D Model2Vec (PRIMARY) ~400MB - from theseedship/gemma-deposium-768d
+# - int8 reranker ~30MB - from C10X/int8
+# Total download: ~430MB (cached on Railway between deployments)
 
 # Create non-root user for security
 RUN useradd -m -u 1001 -s /bin/bash appuser && \

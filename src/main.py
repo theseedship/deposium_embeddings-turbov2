@@ -30,13 +30,21 @@ async def load_models():
     # Load Gemma-768D Model2Vec (PRIMARY MODEL - Winner!)
     logger.info("Loading Gemma-768D Model2Vec (PRIMARY)...")
     logger.info("  Quality: 0.6587 | Semantic: 0.7302 | Clustering: 0.5558 | Multilingual: 0.6903")
-    gemma_768d_path = Path("models/gemma-deposium-768d")
-    if gemma_768d_path.exists():
-        models["gemma-768d"] = StaticModel.from_pretrained(str(gemma_768d_path))
+
+    # Try loading from local path first, then from Hugging Face
+    gemma_768d_local = Path("models/gemma-deposium-768d")
+    if gemma_768d_local.exists():
+        logger.info("Loading Gemma-768D from local path...")
+        models["gemma-768d"] = StaticModel.from_pretrained(str(gemma_768d_local))
         logger.info("✅ Gemma-768D Model2Vec loaded from local! (768D, 500-700x faster)")
     else:
-        logger.error(f"❌ Gemma-768D not found at {gemma_768d_path}")
-        raise RuntimeError("Primary model Gemma-768D not found!")
+        logger.info("Local model not found, downloading from Hugging Face...")
+        try:
+            models["gemma-768d"] = StaticModel.from_pretrained("tss-deposium/gemma-deposium-768d")
+            logger.info("✅ Gemma-768D Model2Vec downloaded from HF! (768D, 500-700x faster)")
+        except Exception as e:
+            logger.error(f"❌ Failed to load Gemma-768D: {e}")
+            raise RuntimeError("Primary model Gemma-768D not found!")
 
     # Load reranker (int8)
     logger.info("Loading int8 reranker model (256D)...")
