@@ -8,6 +8,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY src/ ./src/
 
+# Note: LEAF model downloaded from Hugging Face at startup
+# No need to COPY large model files
+
 # Create non-root user for security
 RUN useradd -m -u 1001 -s /bin/bash appuser && \
     chown -R appuser:appuser /app
