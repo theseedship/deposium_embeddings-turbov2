@@ -152,8 +152,11 @@ async def create_embedding(request: EmbedRequest):
             import numpy as np
             embeddings = np.array(embeddings, dtype=np.float32)
 
-            # Check for NaN/Inf values (float16 edge case) - fallback to float32
-            if np.any(np.isnan(embeddings)) or np.any(np.isinf(embeddings)):
+            # Check for NaN/Inf/Zero values (float16 edge case on CPU) - fallback to float32
+            has_nan_or_inf = np.any(np.isnan(embeddings)) or np.any(np.isinf(embeddings))
+            is_all_zeros = np.allclose(embeddings, 0.0, atol=1e-6)  # Check if all values are near zero
+
+            if has_nan_or_inf or is_all_zeros:
                 logger.warning(f"Float16 NaN detected, retrying with float32 for {len(texts)} texts")
                 # Reload model in float32 and retry
                 model_fp32 = SentenceTransformer("google/embeddinggemma-300m")
