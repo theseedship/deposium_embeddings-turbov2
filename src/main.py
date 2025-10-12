@@ -150,9 +150,16 @@ async def create_embedding(request: EmbedRequest):
             )
             # Convert float16 to float32 for JSON serialization
             import numpy as np
-            # Force convert to float32 and clean any NaN/Inf (float16 edge case with long texts)
             embeddings = np.array(embeddings, dtype=np.float32)
-            embeddings = np.nan_to_num(embeddings, nan=0.0, posinf=0.0, neginf=0.0)
+
+            # Check for NaN/Inf values (float16 edge case)
+            if np.any(np.isnan(embeddings)) or np.any(np.isinf(embeddings)):
+                logger.error(f"NaN/Inf detected in embeddings for texts: {texts[:3]}...")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Float16 precision issue detected. Try using 'turbov2' or 'int8' models, or reduce text length."
+                )
+
             embeddings_list = embeddings.tolist()
         else:
             # Model2Vec models (turbov2, int8)
