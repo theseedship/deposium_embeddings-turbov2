@@ -5,6 +5,7 @@ pydantic==2.9.2
 numpy==1.26.4
 safetensors==0.4.5
 
-# LEAF model dependencies (PyTorch CPU-only)
+# EmbeddingGemma dependencies (PyTorch CPU-only for Railway)
 torch==2.6.0
 transformers==4.57.0
+sentence-transformers==3.3.1

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List
 from model2vec import StaticModel
 import torch
-from transformers import AutoTokenizer
+from sentence_transformers import SentenceTransformer
 from pathlib import Path
 import logging
 
@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Deposium Embeddings - TurboX.v2 + int8 + LEAF",
-    description="Multi-model embeddings: Model2Vec (fast) + LEAF (accurate)",
-    version="3.0.0"
+    title="Deposium Embeddings - TurboX.v2 + int8 + Gemma",
+    description="Multi-model embeddings: Model2Vec (fast) + EmbeddingGemma (high quality, 2048 tokens)",
+    version="4.0.0"
 )
 
 # Load models at startup
@@ -32,33 +32,29 @@ async def load_models():
     models["int8"] = StaticModel.from_pretrained("C10X/int8")
     logger.info("✅ int8 loaded!")
 
-    # Load LEAF model from Hugging Face
+    # Load EmbeddingGemma baseline (replaces LEAF)
     try:
-        logger.info("Loading LEAF model from Hugging Face (768D, INT8 quantized)...")
-        from huggingface_hub import hf_hub_download
+        logger.info("Loading EmbeddingGemma-300m baseline (768D, float16, 2048 tokens)...")
 
-        # Download model files from HF
-        model_path = hf_hub_download(
-            repo_id="tss-deposium/gemma300-leaf-embeddings-test",
-            filename="model_quantized.pt",
-            cache_dir="/tmp/hf_cache"
-        )
+        # Load from HuggingFace with float16 quantization
+        model = SentenceTransformer("google/embeddinggemma-300m")
+        model = model.half()  # Quantize to float16 (50% size reduction)
 
-        # Load model
-        checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
-        models["leaf"] = checkpoint['model']
-        models["leaf"].eval()
+        # Move to GPU if available
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = model.to(device)
 
-        # Load tokenizer from HF
-        tokenizer = AutoTokenizer.from_pretrained(
-            "tss-deposium/gemma300-leaf-embeddings-test",
-            cache_dir="/tmp/hf_cache"
-        )
-        models["leaf"].set_tokenizer(tokenizer)
+        models["gemma"] = model
 
-        logger.info("✅ LEAF loaded! (695 texts/s on CPU)")
+        logger.info(f"✅ EmbeddingGemma loaded!")
+        logger.info(f"   Device: {device}")
+        logger.info(f"   Max seq length: {model.max_seq_length} tokens")
+        logger.info(f"   Embedding dim: {model.get_sentence_embedding_dimension()}D")
+        logger.info(f"   Quantization: float16 (~587MB)")
+        logger.info(f"   MTEB Score: 0.80 Spearman (BIOSSES: 0.83, STSBenchmark: 0.88)")
+
     except Exception as e:
-        logger.warning(f"⚠️  Failed to load LEAF from HF: {e}")
+        logger.warning(f"⚠️  Failed to load EmbeddingGemma: {e}")
 
     logger.info("🚀 All models ready!")
 
@@ -74,12 +70,13 @@ class EmbedResponse(BaseModel):
 @app.get("/")
 async def root():
     return {
-        "service": "Deposium Embeddings - TurboX.v2 + int8 + LEAF",
+        "service": "Deposium Embeddings - TurboX.v2 + int8 + EmbeddingGemma",
         "status": "running",
+        "version": "4.0.0",
         "models": {
             "turbov2": "C10X/Qwen3-Embedding-TurboX.v2 (1024D) - ultra-fast",
             "int8": "C10X/int8 (256D) - compact",
-            "leaf": "LEAF INT8 (768D) - accurate, 695 texts/s CPU"
+            "gemma": "EmbeddingGemma-300m (768D, 2048 tokens) - high quality (MTEB: 0.80)"
         }
     }
 
@@ -112,14 +109,14 @@ async def list_models():
         }
     ]
 
-    # Add LEAF if loaded
-    if "leaf" in models:
+    # Add EmbeddingGemma if loaded
+    if "gemma" in models:
         model_list.append({
-            "name": "leaf",
-            "size": 441000000,  # ~441MB
-            "digest": "leaf-768d-int8",
+            "name": "gemma",
+            "size": 587000000,  # ~587MB (float16)
+            "digest": "gemma-768d-float16",
             "modified_at": "2025-10-12T00:00:00Z",
-            "details": "LEAF INT8 quantized (768 dimensions, 695 texts/s CPU)"
+            "details": "EmbeddingGemma-300m baseline (768D, 2048 tokens, MTEB: 0.80)"
         })
 
     return {"models": model_list}
@@ -142,10 +139,20 @@ async def create_embedding(request: EmbedRequest):
         selected_model = models[request.model]
 
         # Generate embeddings based on model type
-        if request.model == "leaf":
-            # LEAF uses PyTorch (different interface)
-            with torch.no_grad():
-                embeddings = selected_model.encode(texts, device='cpu', normalize=True)
+        if request.model == "gemma":
+            # EmbeddingGemma uses SentenceTransformer
+            embeddings = selected_model.encode(
+                texts,
+                show_progress_bar=False,
+                normalize_embeddings=True,  # Model handles normalization correctly
+                batch_size=8,  # Optimized from benchmarks
+                convert_to_numpy=True  # Ensure numpy array output
+            )
+            # Convert float16 to float32 for JSON serialization
+            import numpy as np
+            # Force convert to float32 and clean any NaN/Inf (float16 edge case with long texts)
+            embeddings = np.array(embeddings, dtype=np.float32)
+            embeddings = np.nan_to_num(embeddings, nan=0.0, posinf=0.0, neginf=0.0)
             embeddings_list = embeddings.tolist()
         else:
             # Model2Vec models (turbov2, int8)

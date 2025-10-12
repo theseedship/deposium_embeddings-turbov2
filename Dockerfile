@@ -8,7 +8,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY src/ ./src/
 
-# Note: LEAF model downloaded from Hugging Face at startup
+# Note: Models downloaded from Hugging Face at startup:
+# - Model2Vec (turbov2, int8) ~60MB total
+# - EmbeddingGemma-300m ~1.2GB (quantized to 587MB float16 on GPU)
 # No need to COPY large model files
 
 # Create non-root user for security
