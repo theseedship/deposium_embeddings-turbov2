@@ -152,13 +152,23 @@ async def create_embedding(request: EmbedRequest):
             import numpy as np
             embeddings = np.array(embeddings, dtype=np.float32)
 
-            # Check for NaN/Inf values (float16 edge case)
+            # Check for NaN/Inf values (float16 edge case) - fallback to float32
             if np.any(np.isnan(embeddings)) or np.any(np.isinf(embeddings)):
-                logger.error(f"NaN/Inf detected in embeddings for texts: {texts[:3]}...")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Float16 precision issue detected. Try using 'turbov2' or 'int8' models, or reduce text length."
+                logger.warning(f"Float16 NaN detected, retrying with float32 for {len(texts)} texts")
+                # Reload model in float32 and retry
+                model_fp32 = SentenceTransformer("google/embeddinggemma-300m")
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                model_fp32 = model_fp32.to(device)
+
+                embeddings = model_fp32.encode(
+                    texts,
+                    show_progress_bar=False,
+                    normalize_embeddings=True,
+                    batch_size=8,
+                    convert_to_numpy=True
                 )
+                embeddings = np.array(embeddings, dtype=np.float32)
+                logger.info(f"Float32 fallback successful for {len(texts)} texts")
 
             embeddings_list = embeddings.tolist()
         else:
