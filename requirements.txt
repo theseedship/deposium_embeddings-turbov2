@@ -9,3 +9,10 @@ safetensors==0.4.5
 torch==2.6.0
 transformers==4.57.0
 sentence-transformers==3.3.1
+
+# Qwen3 Reranker with 4-bit quantization
+bitsandbytes==0.45.0
+accelerate==1.2.1
+
+# MTEB for model evaluation (optional, dev only)
+# mteb==1.18.0
