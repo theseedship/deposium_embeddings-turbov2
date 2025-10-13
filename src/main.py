@@ -3,8 +3,6 @@ from pydantic import BaseModel
 from typing import List, Optional
 from model2vec import StaticModel
 import torch
-import torch.quantization as quant
-import copy
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 from pathlib import Path
@@ -17,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Deposium Embeddings - Gemma-768D Model2Vec + Reranker",
-    description="Ultra-fast embeddings: Gemma-768D Model2Vec (Quality: 0.659, Multilingual: 0.690, 500-700x faster!)",
-    version="6.0.0"
+    title="Deposium Embeddings - Gemma-768D + Qwen3 Reranker",
+    description="Ultra-fast embeddings: Gemma-768D Model2Vec (Quality: 0.659, Multilingual: 0.690) + Qwen3 Reranking (MTEB: 64.33)",
+    version="7.0.0"
 )
 
 # Load models at startup
@@ -47,11 +45,6 @@ async def load_models():
         except Exception as e:
             logger.error(f"❌ Failed to load Gemma-768D: {e}")
             raise RuntimeError("Primary model Gemma-768D not found!")
-
-    # Load reranker (int8)
-    logger.info("Loading int8 reranker model (256D)...")
-    models["int8"] = StaticModel.from_pretrained("C10X/int8")
-    logger.info("✅ int8 reranker loaded!")
 
     # Load Qwen3-Embedding-0.6B for RERANKING (NOT embeddings!)
     # 4-bit quantization with bitsandbytes for Railway deployment
@@ -116,14 +109,13 @@ class RerankResponse(BaseModel):
 async def root():
     model_info = {
         "gemma-768d": "⚡ Gemma-768D Model2Vec (PRIMARY) - 500-700x faster! Quality: 0.659 | Semantic: 0.730 | Multilingual: 0.690",
-        "int8": "C10X/int8 (256D) - lightweight reranker",
         "qwen3-rerank": "🎯 Qwen3-Embedding-0.6B (596M params, MTEB: 64.33) - Full reranker with 4-bit quantization",
     }
 
     return {
-        "service": "Deposium Embeddings - Multi-Model Evaluation",
+        "service": "Deposium Embeddings - Gemma-768D + Qwen3 Reranker",
         "status": "running",
-        "version": "6.1.0",
+        "version": "7.0.0",
         "models": model_info,
         "recommended": "gemma-768d (WINNER: Best quality + speed + multilingual)",
         "quality_metrics": {
@@ -166,13 +158,6 @@ async def list_models():
             "digest": "gemma-768d-m2v-deposium",
             "modified_at": "2025-10-13T00:00:00Z",
             "details": "⚡ Gemma-768D Model2Vec (PRIMARY) - Quality: 0.659 | Multilingual: 0.690 | 500-700x FASTER!"
-        },
-        {
-            "name": "int8",
-            "size": 30000000,  # ~30MB
-            "digest": "int8-256d-reranker",
-            "modified_at": "2025-10-09T00:00:00Z",
-            "details": "C10X/int8 (256D) - Reranker model"
         },
         {
             "name": "qwen3-rerank",
@@ -231,7 +216,6 @@ async def rerank_documents(request: RerankRequest):
 
     Supports:
     - qwen3-rerank: Full Qwen3-Embedding-0.6B with 4-bit quantization (MTEB: 64.33)
-    - int8: Lightweight C10X/int8 reranker (256D)
 
     Returns documents sorted by relevance score (highest first)
     """

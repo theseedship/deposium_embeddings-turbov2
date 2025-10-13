@@ -36,7 +36,6 @@ TEST_SENTENCES = [
 MODELS = {
     "gemma-768d": "tss-deposium/gemma-deposium-768d",
     "qwen3-m2v": "Pringled/m2v-Qwen3-Embedding-0.6B",
-    "int8": "C10X/int8",
 }
 
 

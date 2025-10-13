@@ -165,12 +165,12 @@ def run_single_test(model: str = "qwen3-rerank"):
 
 
 def compare_models():
-    """Compare qwen3-rerank vs int8"""
+    """Compare available reranking models"""
     print(f"\n{'='*70}")
     print(f"🏆 COMPARING RERANKING MODELS")
     print(f"{'='*70}\n")
 
-    models = ["qwen3-rerank", "int8"]
+    models = ["qwen3-rerank"]
     results = {}
 
     for model in models:
@@ -228,10 +228,10 @@ def compare_models():
 
 def main():
     parser = argparse.ArgumentParser(description="Test reranking functionality")
-    parser.add_argument("--model", type=str, choices=["qwen3-rerank", "int8"],
+    parser.add_argument("--model", type=str, choices=["qwen3-rerank"],
                       default="qwen3-rerank", help="Model to test")
     parser.add_argument("--compare", action="store_true",
-                      help="Compare both reranking models")
+                      help="Compare available reranking models")
 
     args = parser.parse_args()
 
