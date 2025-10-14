@@ -298,14 +298,22 @@ async def rerank_documents(request: RerankRequest):
 
         # Handle ONNX models (optimized inference)
         if "onnx" in request.model and f"{request.model}-tokenizer" in models:
-            from optimum.onnxruntime import ORTModelForFeatureExtraction
             import numpy as np
+            import torch
 
             tokenizer = models[f"{request.model}-tokenizer"]
 
-            # Tokenize and encode
+            # Tokenize query
             query_inputs = tokenizer(request.query, return_tensors="pt", padding=True, truncation=True)
+            # Add position_ids if not present
+            if "position_ids" not in query_inputs:
+                query_inputs["position_ids"] = torch.arange(0, query_inputs["input_ids"].shape[1], dtype=torch.long).unsqueeze(0)
+
+            # Tokenize documents
             doc_inputs = tokenizer(request.documents, return_tensors="pt", padding=True, truncation=True)
+            # Add position_ids if not present
+            if "position_ids" not in doc_inputs:
+                doc_inputs["position_ids"] = torch.arange(0, doc_inputs["input_ids"].shape[1], dtype=torch.long).unsqueeze(0).expand(len(request.documents), -1)
 
             # Get embeddings from ONNX model
             query_outputs = selected_model(**query_inputs)
