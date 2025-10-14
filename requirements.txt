@@ -7,7 +7,7 @@ safetensors==0.4.5
 
 # EmbeddingGemma dependencies (PyTorch CPU-only for Railway)
 torch==2.6.0
-transformers==4.57.0
+transformers==4.46.3
 sentence-transformers==3.3.1
 
 # Qwen3 Reranker with 4-bit quantization (GPU)
