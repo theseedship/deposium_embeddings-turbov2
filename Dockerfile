@@ -23,9 +23,9 @@ ENV ORT_NUM_THREADS=4 \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Model Cache (speeds up model loading)
-ENV HF_HOME=/app/.cache/huggingface \
-    TRANSFORMERS_CACHE=/app/.cache/huggingface/transformers
+# Model Cache (uses Railway volume at /app/models)
+ENV HF_HOME=/app/models \
+    TRANSFORMERS_CACHE=/app/models/transformers
 
 # Install Python dependencies
 WORKDIR /app
@@ -40,8 +40,8 @@ COPY src/ ./src/
 # - int8 reranker ~30MB - from C10X/int8
 # Total download: ~430MB (cached on Railway between deployments)
 
-# Create cache directory for models
-RUN mkdir -p /app/.cache/huggingface/transformers
+# Create cache directory for models (Railway volume will override)
+RUN mkdir -p /app/models/transformers
 
 # Create non-root user for security
 RUN useradd -m -u 1001 -s /bin/bash appuser && \
