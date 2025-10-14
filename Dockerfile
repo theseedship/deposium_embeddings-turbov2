@@ -32,18 +32,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application and local models
+# Copy application
 COPY src/ ./src/
-COPY models/qwen25-deposium-1024d /app/models/qwen25-deposium-1024d
-COPY models/gemma-deposium-768d /app/models/gemma-deposium-768d
 
-# Note: Local models included in image:
-# - Qwen25-1024D Model2Vec (PRIMARY) ~65MB - Instruction-aware
-# - Gemma-768D Model2Vec (SECONDARY) ~400MB - Multilingual
-# Additional models downloaded from Hugging Face at startup if needed:
-# - EmbeddingGemma-300M (full-size) ~300MB
-# - Qwen3-Embedding-0.6B (full-size) ~600MB
-# Local models total: ~465MB (included in Docker image, no download needed)
+# Note: Models will be downloaded from Hugging Face at startup:
+# - Qwen25-1024D Model2Vec (PRIMARY) ~65MB - from tss-deposium/qwen25-deposium-1024d
+# - Gemma-768D Model2Vec (SECONDARY) ~400MB - from tss-deposium/gemma-deposium-768d
+# - EmbeddingGemma-300M (optional, full-size) ~300MB
+# - Qwen3-Embedding-0.6B (optional, full-size) ~600MB
+# Total first download: ~465MB (cached on Railway volume between deployments)
 
 # Create cache directory for models (Railway volume will override)
 RUN mkdir -p /app/models/transformers
