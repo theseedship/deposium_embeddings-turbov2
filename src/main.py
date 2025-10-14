@@ -37,12 +37,19 @@ async def load_models():
     logger.info("  Size: 65MB (6x smaller than Gemma-768D)")
     logger.info("  Speed: 500-1000x faster than full LLM")
 
-    # Try loading from local path first, then from Hugging Face
-    qwen25_local = Path("models/qwen25-deposium-1024d")
+    # Try loading from local_models (in Docker image) first, then from Hugging Face
+    # Note: /app/models is Railway volume (HuggingFace cache), /app/local_models is in image
+    qwen25_local = Path("/app/local_models/qwen25-deposium-1024d")
+    qwen25_fallback = Path("models/qwen25-deposium-1024d")  # For local dev
+
     if qwen25_local.exists():
-        logger.info("Loading Qwen25-1024D from local path...")
+        logger.info("Loading Qwen25-1024D from Docker image (/app/local_models)...")
         models["qwen25-1024d"] = StaticModel.from_pretrained(str(qwen25_local))
-        logger.info("✅ Qwen25-1024D Model2Vec loaded from local! (1024D, instruction-aware)")
+        logger.info("✅ Qwen25-1024D Model2Vec loaded from image! (1024D, instruction-aware)")
+    elif qwen25_fallback.exists():
+        logger.info("Loading Qwen25-1024D from local dev path...")
+        models["qwen25-1024d"] = StaticModel.from_pretrained(str(qwen25_fallback))
+        logger.info("✅ Qwen25-1024D Model2Vec loaded from local dev! (1024D, instruction-aware)")
     else:
         logger.info("Local model not found, downloading from Hugging Face...")
         try:
@@ -56,11 +63,17 @@ async def load_models():
     logger.info("\nLoading Gemma-768D Model2Vec (SECONDARY)...")
     logger.info("  Quality: 0.551 | Multilingual: 0.737")
 
-    gemma_768d_local = Path("models/gemma-deposium-768d")
+    gemma_768d_local = Path("/app/local_models/gemma-deposium-768d")
+    gemma_768d_fallback = Path("models/gemma-deposium-768d")  # For local dev
+
     if gemma_768d_local.exists():
-        logger.info("Loading Gemma-768D from local path...")
+        logger.info("Loading Gemma-768D from Docker image (/app/local_models)...")
         models["gemma-768d"] = StaticModel.from_pretrained(str(gemma_768d_local))
-        logger.info("✅ Gemma-768D Model2Vec loaded from local! (768D, 500-700x faster)")
+        logger.info("✅ Gemma-768D Model2Vec loaded from image! (768D, 500-700x faster)")
+    elif gemma_768d_fallback.exists():
+        logger.info("Loading Gemma-768D from local dev path...")
+        models["gemma-768d"] = StaticModel.from_pretrained(str(gemma_768d_fallback))
+        logger.info("✅ Gemma-768D Model2Vec loaded from local dev! (768D, 500-700x faster)")
     else:
         logger.info("Local model not found, downloading from Hugging Face...")
         try:
