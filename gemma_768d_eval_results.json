@@ -1,0 +1,20 @@
+{
+  "model": "models/gemma-deposium-768d",
+  "dimensions": 768,
+  "overall_quality": 0.6587472959301406,
+  "semantic_similarity": 0.7301621303480452,
+  "topic_clustering": 0.5557734434973592,
+  "multilingual_alignment": 0.6903063139450174,
+  "silhouette_score": 0.11154688699471839,
+  "cluster_purity": 1.0,
+  "avg_multilingual_similarity": 0.6903063139450174,
+  "assessment": "GOOD",
+  "recommendation": "deploy",
+  "comparison": {
+    "gemma_baseline": 0.788,
+    "qwen3_256d": 0.6651,
+    "qwen3_1024d": 0.3745,
+    "gemma_768d": 0.6587472959301406,
+    "improvement_vs_qwen3_256d_percent": -0.9551502134805951
+  }
+}
