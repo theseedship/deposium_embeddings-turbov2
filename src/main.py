@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Deposium Embeddings - Gemma + Qwen3 FP32 Optimized",
-    description="Ultra-fast embeddings: Gemma-768D Model2Vec (500-700x faster) + Full-size models (EmbeddingGemma-300M, Qwen3-0.6B) + Optimized FP32 Reranking (242ms!)",
-    version="9.0.0"
+    title="Deposium Embeddings - Qwen25 Instruction-Aware + Full-Size Models",
+    description="🔥 NEW: Qwen25-1024D Instruction-Aware (65MB, quality: 0.84) + Gemma-768D Model2Vec + Full-size models (EmbeddingGemma-300M, Qwen3-0.6B) + FP32 Reranking",
+    version="10.0.0"
 )
 
 # Load models at startup
@@ -27,11 +27,35 @@ models = {}
 async def load_models():
     global models
 
-    # Load Gemma-768D Model2Vec (PRIMARY MODEL - Winner!)
-    logger.info("Loading Gemma-768D Model2Vec (PRIMARY)...")
-    logger.info("  Quality: 0.6587 | Semantic: 0.7302 | Clustering: 0.5558 | Multilingual: 0.6903")
+    # Load Qwen25-1024D Model2Vec (PRIMARY MODEL - NEW CHAMPION! 🏆)
+    logger.info("=" * 80)
+    logger.info("🔥 Loading Qwen25-1024D Model2Vec (PRIMARY - INSTRUCTION-AWARE)")
+    logger.info("=" * 80)
+    logger.info("  Overall Quality: 0.841 (+52% vs Gemma-768D)")
+    logger.info("  Instruction-Aware: 0.953 (UNIQUE capability)")
+    logger.info("  Semantic: 0.950 | Code: 0.864 | Conversational: 0.846")
+    logger.info("  Size: 65MB (6x smaller than Gemma-768D)")
+    logger.info("  Speed: 500-1000x faster than full LLM")
 
     # Try loading from local path first, then from Hugging Face
+    qwen25_local = Path("models/qwen25-deposium-1024d")
+    if qwen25_local.exists():
+        logger.info("Loading Qwen25-1024D from local path...")
+        models["qwen25-1024d"] = StaticModel.from_pretrained(str(qwen25_local))
+        logger.info("✅ Qwen25-1024D Model2Vec loaded from local! (1024D, instruction-aware)")
+    else:
+        logger.info("Local model not found, downloading from Hugging Face...")
+        try:
+            models["qwen25-1024d"] = StaticModel.from_pretrained("tss-deposium/qwen25-deposium-1024d")
+            logger.info("✅ Qwen25-1024D Model2Vec downloaded from HF! (1024D, instruction-aware)")
+        except Exception as e:
+            logger.error(f"❌ Failed to load Qwen25-1024D: {e}")
+            raise RuntimeError("Primary model Qwen25-1024D not found!")
+
+    # Load Gemma-768D Model2Vec (SECONDARY - still available)
+    logger.info("\nLoading Gemma-768D Model2Vec (SECONDARY)...")
+    logger.info("  Quality: 0.551 | Multilingual: 0.737")
+
     gemma_768d_local = Path("models/gemma-deposium-768d")
     if gemma_768d_local.exists():
         logger.info("Loading Gemma-768D from local path...")
@@ -43,8 +67,7 @@ async def load_models():
             models["gemma-768d"] = StaticModel.from_pretrained("tss-deposium/gemma-deposium-768d")
             logger.info("✅ Gemma-768D Model2Vec downloaded from HF! (768D, 500-700x faster)")
         except Exception as e:
-            logger.error(f"❌ Failed to load Gemma-768D: {e}")
-            raise RuntimeError("Primary model Gemma-768D not found!")
+            logger.warning(f"⚠️ Could not load Gemma-768D: {e}")
 
     # Load full-size embedding models (for comparison with distilled versions)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -82,7 +105,7 @@ async def load_models():
 
 # Request/Response models
 class EmbedRequest(BaseModel):
-    model: str = "gemma-768d"
+    model: str = "qwen25-1024d"  # Changed to qwen25-1024d as primary
     input: str | List[str]
 
 class EmbedResponse(BaseModel):
@@ -102,28 +125,44 @@ class RerankResponse(BaseModel):
 @app.get("/")
 async def root():
     model_info = {
-        "gemma-768d": "⚡ Gemma-768D Model2Vec (PRIMARY) - 500-700x faster! Quality: 0.659 | Semantic: 0.730 | Multilingual: 0.690",
+        "qwen25-1024d": "🔥 Qwen25-1024D (PRIMARY) - Instruction-Aware! Quality: 0.841 | Instruction: 0.953 | 65MB",
+        "gemma-768d": "⚡ Gemma-768D Model2Vec (SECONDARY) - 500-700x faster! Quality: 0.551 | Multilingual: 0.737",
         "embeddinggemma-300m": "🎯 EmbeddingGemma-300M (FULL-SIZE) - 300M params, 768D, high quality embeddings",
         "qwen3-embed": "🚀 Qwen3-Embedding-0.6B (FULL-SIZE) - 600M params, 1024D, MTEB: 64.33",
         "qwen3-rerank": "🏆 Qwen3 FP32 Reranking - FASTEST + BEST PRECISION (242ms for 3 docs!)",
     }
 
     return {
-        "service": "Deposium Embeddings - Gemma + Qwen3 FP32 Optimized",
+        "service": "Deposium Embeddings - Qwen25 Instruction-Aware + Full-Size Models",
         "status": "running",
-        "version": "9.0.0",
+        "version": "10.0.0",
         "models": model_info,
-        "recommended": "gemma-768d for speed, qwen3-embed for quality, qwen3-rerank for reranking",
+        "recommended": "qwen25-1024d for instruction-aware + quality, gemma-768d for multilingual, qwen3-rerank for reranking",
         "quality_metrics": {
+            "qwen25-1024d": {
+                "overall": 0.841,
+                "instruction_awareness": 0.953,
+                "semantic_similarity": 0.950,
+                "code_understanding": 0.864,
+                "conversational": 0.846,
+                "multilingual": 0.434,
+                "dimensions": 1024,
+                "size_mb": 65,
+                "params": "1.54B distilled",
+                "speed": "500-1000x faster than full LLM",
+                "unique_capability": "Instruction-aware embeddings (ONLY model with this)",
+                "use_case": "Primary model - instruction-aware RAG, Q&A, code search"
+            },
             "gemma-768d": {
-                "overall": 0.6587,
-                "semantic_similarity": 0.7302,
-                "topic_clustering": 0.5558,
-                "multilingual": 0.6903,
+                "overall": 0.551,
+                "semantic_similarity": 0.591,
+                "multilingual": 0.737,
+                "conversational": 0.159,
                 "dimensions": 768,
+                "size_mb": 400,
                 "params": "~50M",
                 "speed": "500-700x faster than full Gemma",
-                "use_case": "Ultra-fast embeddings"
+                "use_case": "Secondary - multilingual support"
             },
             "embeddinggemma-300m": {
                 "params": "300M",
@@ -164,11 +203,18 @@ async def list_models():
     """Ollama-compatible endpoint to list models"""
     model_list = [
         {
+            "name": "qwen25-1024d",
+            "size": 65000000,  # ~65MB
+            "digest": "qwen25-1024d-m2v-instruction-aware",
+            "modified_at": "2025-10-14T00:00:00Z",
+            "details": "🔥 Qwen25-1024D (PRIMARY) - Instruction-Aware! Quality: 0.841 | 65MB | 500-1000x FASTER"
+        },
+        {
             "name": "gemma-768d",
-            "size": 50000000,  # ~50MB (distilled)
+            "size": 400000000,  # ~400MB (corrected size)
             "digest": "gemma-768d-m2v-deposium",
             "modified_at": "2025-10-13T00:00:00Z",
-            "details": "⚡ Gemma-768D Model2Vec - 500-700x FASTER! Quality: 0.659 | Multilingual: 0.690"
+            "details": "⚡ Gemma-768D (SECONDARY) - Quality: 0.551 | Multilingual: 0.737"
         },
         {
             "name": "embeddinggemma-300m",

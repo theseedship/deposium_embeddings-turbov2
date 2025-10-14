@@ -1,0 +1,37 @@
+{
+  "timestamp": "/home/nico/code_source/tss/deposium_embeddings-turbov2",
+  "models_compared": 2,
+  "results": {
+    "Qwen25-1024D": {
+      "dimensions": 1024,
+      "size_mb": 65,
+      "base_model": "Qwen2.5-1.5B-Instruct (1.54B params)",
+      "type": "Instruction-tuned LLM distillation",
+      "scores": {
+        "semantic_similarity": 0.9497060795812639,
+        "instruction_awareness": 0.9532237458074354,
+        "multilingual": 0.43362006605411374,
+        "conversational": 0.8457928707043242,
+        "code_understanding": 0.8638783495148855,
+        "overall": 0.8405959500752261
+      }
+    },
+    "Gemma-768D": {
+      "dimensions": 768,
+      "size_mb": 400,
+      "base_model": "google/embeddinggemma-300m",
+      "type": "Embedding model distillation",
+      "scores": {
+        "semantic_similarity": 0.5912161178477048,
+        "instruction_awareness": 0.7214740430261475,
+        "multilingual": 0.7367094267400336,
+        "conversational": 0.15867625794918594,
+        "code_understanding": 0.4083245265651623,
+        "overall": 0.5506581944938006
+      }
+    }
+  },
+  "best_model": "Qwen25-1024D",
+  "best_overall_score": 0.8405959500752261,
+  "recommendation": "Deploy Qwen25-1024D"
+}

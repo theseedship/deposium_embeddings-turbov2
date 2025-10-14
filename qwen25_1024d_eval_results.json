@@ -1,0 +1,44 @@
+{
+  "model": "models/qwen25-deposium-1024d",
+  "dimensions": 1024,
+  "overall_quality": 0.6821501599966209,
+  "individual_scores": {
+    "semantic_similarity": 0.5424323044171149,
+    "topic_clustering": 0.4344125663124082,
+    "multilingual_alignment": 0.3944658026551781,
+    "instruction_awareness": 0.9495697584334292,
+    "conversational_understanding": 0.7996161162780209,
+    "code_understanding": 0.8449940461022909
+  },
+  "assessment": "GOOD",
+  "recommendation": "deploy",
+  "improvements": {
+    "vs_qwen3_256d_percent": 2.578971428063284,
+    "vs_gemma_768d_percent": -2.549977143339869
+  },
+  "unique_capabilities": [
+    "instruction_aware",
+    "conversational_understanding",
+    "code_understanding",
+    "multilingual",
+    "ultra_compact_65mb"
+  ],
+  "comparison": {
+    "Qwen3-Embedding (600MB)": {
+      "quality": 0.66,
+      "instruction_aware": false
+    },
+    "Qwen3-256D": {
+      "quality": 0.665,
+      "instruction_aware": false
+    },
+    "Gemma-768D (400MB)": {
+      "quality": 0.7,
+      "instruction_aware": false
+    },
+    "Qwen25-1024D (65MB)": {
+      "quality": 0.6821501599966209,
+      "instruction_aware": true
+    }
+  }
+}

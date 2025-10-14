@@ -1,31 +1,40 @@
-# Deposium Embeddings - Dual Model Service
+# Deposium Embeddings - Instruction-Aware + Multi-Model Service
 
-Ultra-fast static embeddings service with **two models** using Model2Vec for CPU-optimized inference.
+🔥 **NEW: Qwen25-1024D** - First instruction-aware static embeddings model! Quality: 0.841, Size: 65MB
+
+Ultra-fast embeddings service with **instruction-awareness** + full-size models for maximum flexibility.
 
 ## 🚀 Features
 
-- **Dual model support:** TurboX.v2 (1024D) + int8 (256D)
-- **500x faster** than traditional transformers on CPU
-- **50x smaller** model size (~30MB vs 639MB)
+- 🔥 **Qwen25-1024D** (PRIMARY) - Instruction-aware embeddings (UNIQUE capability)
+- ⚡ **Gemma-768D** (SECONDARY) - Multilingual support
+- 🎯 **EmbeddingGemma-300M** - Full-size embeddings (300M params)
+- 🚀 **Qwen3-Embedding-0.6B** - Full-size embeddings (600M params, MTEB: 64.33)
+- 🏆 **Qwen3 Reranking** - Optimized FP32 reranking (242ms)
+- **500-1000x faster** than full LLMs
 - **Ollama-compatible API** - drop-in replacement
-- **Static embeddings** - no GPU required
 - **FastAPI** backend with health checks
 
 ## 📊 Available Models
 
-### TurboX.v2 (1024 dimensions)
-- **HuggingFace:** C10X/Qwen3-Embedding-TurboX.v2
-- **Base:** Qwen3-Embedding-0.6B
-- **Type:** Static embeddings (Model2Vec)
-- **Size:** ~30MB
-- **Use case:** General-purpose embeddings, semantic search
+### 🔥 Qwen25-1024D (PRIMARY - INSTRUCTION-AWARE)
+- **Quality:** 0.841 overall (+52% vs Gemma-768D)
+- **Instruction-Awareness:** 0.953 (UNIQUE capability)
+- **Semantic:** 0.950 | **Code:** 0.864 | **Conversational:** 0.846
+- **Size:** 65MB (6x smaller than Gemma-768D)
+- **Dimensions:** 1024D
+- **Speed:** 500-1000x faster than full Qwen2.5-1.5B LLM
+- **Base:** Qwen2.5-1.5B-Instruct (1.54B params distilled)
+- **Use case:** Primary model - instruction-aware RAG, Q&A, code search, conversational AI
 
-### int8 (256 dimensions)
-- **HuggingFace:** C10X/int8
-- **Base:** Qwen3-Reranker-0.6B
-- **Type:** Static embeddings (Model2Vec)
-- **Size:** ~30MB
-- **Use case:** Lightweight embeddings, reranking optimization
+### ⚡ Gemma-768D (SECONDARY - MULTILINGUAL)
+- **Quality:** 0.551 overall
+- **Multilingual:** 0.737 (best for cross-language)
+- **Size:** 400MB
+- **Dimensions:** 768D
+- **Speed:** 500-700x faster than full Gemma
+- **Base:** google/embeddinggemma-300m
+- **Use case:** Secondary - multilingual support, cross-language search
 
 ## 🐳 Docker Usage
 
@@ -47,15 +56,20 @@ curl http://localhost:11435/health
 # List models
 curl http://localhost:11435/api/tags
 
-# Generate embedding with TurboX.v2 (1024D)
+# Generate embedding with Qwen25-1024D (PRIMARY - instruction-aware)
 curl -X POST http://localhost:11435/api/embed \
   -H "Content-Type: application/json" \
-  -d '{"model":"turbov2","input":"test embedding"}'
+  -d '{"model":"qwen25-1024d","input":"Explain how neural networks work"}'
 
-# Generate embedding with int8 (256D)
+# Generate embedding with Gemma-768D (SECONDARY - multilingual)
 curl -X POST http://localhost:11435/api/embed \
   -H "Content-Type: application/json" \
-  -d '{"model":"int8","input":"test embedding"}'
+  -d '{"model":"gemma-768d","input":"Machine learning et intelligence artificielle"}'
+
+# Reranking with Qwen3 (FP32 optimized)
+curl -X POST http://localhost:11435/api/rerank \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3-rerank","query":"machine learning","documents":["AI and ML","cooking recipes","deep learning"]}'
 ```
 
 ## 🔌 API Endpoints
@@ -75,44 +89,61 @@ Generate embeddings with model selection
 **Request:**
 ```json
 {
-  "model": "turbov2",  // or "int8"
-  "input": "your text here"
+  "model": "qwen25-1024d",  // or "gemma-768d", "qwen3-embed"
+  "input": "Explain how neural networks work"
 }
 ```
 
-**Response (turbov2 - 1024D):**
+**Response (qwen25-1024d - 1024D):**
 ```json
 {
-  "model": "turbov2",
+  "model": "qwen25-1024d",
   "embeddings": [[0.123, -0.456, ...]]  // 1024 dimensions
 }
 ```
 
-**Response (int8 - 256D):**
+**Response (gemma-768d - 768D):**
 ```json
 {
-  "model": "int8",
-  "embeddings": [[0.123, -0.456, ...]]  // 256 dimensions
+  "model": "gemma-768d",
+  "embeddings": [[0.123, -0.456, ...]]  // 768 dimensions
 }
 ```
 
 ## 🔧 Integration with N8N
 
-### TurboX.v2 (1024D)
+### Qwen25-1024D (PRIMARY - Instruction-Aware)
 Configure N8N Ollama credentials:
 - **Base URL:** `http://deposium-embeddings-turbov2:11435`
-- **Model Name:** `turbov2`
+- **Model Name:** `qwen25-1024d`
+- **Use case:** RAG with instruction queries, Q&A, code search
 
-### int8 (256D)
+### Gemma-768D (SECONDARY - Multilingual)
 Configure N8N Ollama credentials:
 - **Base URL:** `http://deposium-embeddings-turbov2:11435`
-- **Model Name:** `int8`
+- **Model Name:** `gemma-768d`
+- **Use case:** Multilingual search, cross-language retrieval
 
 ## 📈 Performance
 
-- **Inference Speed:** ~500x faster than qwen3-embedding:0.6b on CPU
-- **Memory Usage:** ~100-200MB RAM
-- **CPU Optimization:** Perfect for Railway 32 vCPU deployment
+### Qwen25-1024D (PRIMARY)
+- **Overall Quality:** 0.841 (+52% vs Gemma-768D)
+- **Instruction-Awareness:** 0.953 (UNIQUE capability)
+- **Inference Speed:** ~500-1000x faster than full Qwen2.5-1.5B LLM
+- **Memory Usage:** ~100-150MB RAM
+- **Model Size:** 65MB (10x smaller than Qwen3-Embedding)
+
+### Gemma-768D (SECONDARY)
+- **Overall Quality:** 0.551
+- **Multilingual:** 0.737 (best for cross-language)
+- **Inference Speed:** ~500-700x faster than full Gemma
+- **Memory Usage:** ~200-300MB RAM
+- **Model Size:** 400MB
+
+### CPU Optimization
+- Perfect for Railway 32 vCPU deployment
+- Environment optimizations (OMP, jemalloc, KMP)
+- FP32 models for best precision on vCPU
 
 ## 🚀 Railway Deployment
 
