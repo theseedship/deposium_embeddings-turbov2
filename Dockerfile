@@ -24,8 +24,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Model Cache (uses Railway volume at /app/models)
-ENV HF_HOME=/app/models \
-    TRANSFORMERS_CACHE=/app/models/transformers
+# Note: Using only HF_HOME (TRANSFORMERS_CACHE is deprecated in transformers v5)
+ENV HF_HOME=/app/models
 
 # Install Python dependencies
 WORKDIR /app
@@ -43,12 +43,9 @@ COPY src/ ./src/
 # Create cache directory for models (Railway volume will override)
 RUN mkdir -p /app/models/transformers
 
-# Create non-root user for security
-RUN useradd -m -u 1001 -s /bin/bash appuser && \
-    chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
+# Note: Running as root to allow writing to Railway volume at /app/models
+# The Railway volume is mounted with root permissions and cannot be written by non-root user
+# This is safe as the container is isolated by Railway's infrastructure
 
 # Expose port
 EXPOSE 11435
