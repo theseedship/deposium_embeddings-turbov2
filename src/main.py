@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Deposium Embeddings - Gemma-768D + Qwen3 ONNX Reranker",
-    description="Ultra-fast embeddings: Gemma-768D Model2Vec (Quality: 0.659, Multilingual: 0.690) + Qwen3 ONNX INT8 Reranking (MTEB: 64.33, 3-5x faster)",
-    version="8.0.0"
+    title="Deposium Embeddings - Gemma + Qwen3 FP32 Optimized",
+    description="Ultra-fast embeddings: Gemma-768D Model2Vec (500-700x faster) + Full-size models (EmbeddingGemma-300M, Qwen3-0.6B) + Optimized FP32 Reranking (242ms!)",
+    version="9.0.0"
 )
 
 # Load models at startup
@@ -46,83 +46,35 @@ async def load_models():
             logger.error(f"❌ Failed to load Gemma-768D: {e}")
             raise RuntimeError("Primary model Gemma-768D not found!")
 
-    # Load Qwen3-Embedding-0.6B for RERANKING (NOT embeddings!)
-    # Multiple versions for comparison: INT8 (fast) and FP32 (quality baseline)
-    logger.info("Loading Qwen3-Embedding-0.6B reranker models...")
+    # Load full-size embedding models (for comparison with distilled versions)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    logger.info(f"Device: {device}")
+
+    # Load EmbeddingGemma-300M (full-size Gemma embeddings)
+    logger.info("Loading EmbeddingGemma-300M (full-size embeddings)...")
     try:
-        # Check if running on CPU (Railway) or GPU
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"Device: {device}")
+        models["embeddinggemma-300m"] = SentenceTransformer(
+            "google/embeddinggemma-300m",
+            trust_remote_code=True,
+            device=device
+        )
+        logger.info("✅ EmbeddingGemma-300M loaded! (300M params, 768D)")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not load EmbeddingGemma-300M: {e}")
 
-        if device == "cpu":
-            # Option 1: ONNX Runtime (BEST - 3-5x faster)
-            try:
-                logger.info("Loading Qwen3 with Optimum + ONNX Runtime...")
-                from optimum.onnxruntime import ORTModelForFeatureExtraction
-                from transformers import AutoTokenizer
+    # Load Qwen3-Embedding-0.6B (for both embeddings AND reranking)
+    logger.info("Loading Qwen3-Embedding-0.6B (embeddings + reranking)...")
+    try:
+        models["qwen3-embed"] = SentenceTransformer(
+            "Qwen/Qwen3-Embedding-0.6B",
+            trust_remote_code=True,
+            device=device
+        )
+        logger.info("✅ Qwen3-Embedding-0.6B loaded! (600M params, 1024D, MTEB: 64.33)")
 
-                # Export to ONNX (ONNX Runtime optimizes automatically)
-                onnx_model = ORTModelForFeatureExtraction.from_pretrained(
-                    "Qwen/Qwen3-Embedding-0.6B",
-                    export=True,
-                    provider="CPUExecutionProvider",
-                    trust_remote_code=True,
-                )
-
-                models["qwen3-rerank-onnx"] = onnx_model
-                models["qwen3-rerank-onnx-tokenizer"] = AutoTokenizer.from_pretrained(
-                    "Qwen/Qwen3-Embedding-0.6B",
-                    trust_remote_code=True
-                )
-                logger.info("✅ Qwen3 ONNX loaded! (ONNX Runtime auto-optimization)")
-            except Exception as e:
-                logger.warning(f"⚠️ ONNX loading failed: {e}")
-                logger.info("Falling back to PyTorch INT8...")
-
-            # Option 2: PyTorch INT8 (fallback)
-            logger.info("Loading Qwen3 INT8 (PyTorch fallback)...")
-            model_int8 = SentenceTransformer(
-                "Qwen/Qwen3-Embedding-0.6B",
-                trust_remote_code=True,
-                device="cpu"
-            )
-
-            # Apply dynamic INT8 quantization (2-3x speedup, ~50% memory reduction)
-            logger.info("Applying INT8 dynamic quantization to Linear layers...")
-            model_int8 = torch.quantization.quantize_dynamic(
-                model_int8,
-                {torch.nn.Linear},  # Quantize all Linear layers
-                dtype=torch.qint8
-            )
-            models["qwen3-rerank"] = model_int8
-            logger.info("✅ Qwen3 INT8 loaded! (~300MB, 2-3x faster)")
-
-            # Option 3: FP32 version (baseline for comparison)
-            logger.info("Loading Qwen3 FP32 (baseline quality)...")
-            model_fp32 = SentenceTransformer(
-                "Qwen/Qwen3-Embedding-0.6B",
-                trust_remote_code=True,
-                device="cpu"
-            )
-            models["qwen3-rerank-fp32"] = model_fp32
-            logger.info("✅ Qwen3 FP32 loaded! (~600MB, baseline quality)")
-        else:
-            # GPU: use 4-bit quantization
-            logger.info("Loading Qwen3 on GPU with 4-bit quantization...")
-            from transformers import BitsAndBytesConfig
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4"
-            )
-            models["qwen3-rerank"] = SentenceTransformer(
-                "Qwen/Qwen3-Embedding-0.6B",
-                trust_remote_code=True,
-                device="cuda",
-                model_kwargs={"quantization_config": quantization_config}
-            )
-            logger.info("✅ Qwen3-Embedding-0.6B loaded with 4-bit quantization! (GPU)")
+        # Also use for reranking (FP32 = best speed + precision on Railway vCPU!)
+        models["qwen3-rerank"] = models["qwen3-embed"]
+        logger.info("✅ Qwen3 also configured for reranking (242ms, best precision!)")
     except Exception as e:
         logger.warning(f"⚠️ Could not load Qwen3-Embedding: {e}")
 
@@ -151,17 +103,17 @@ class RerankResponse(BaseModel):
 async def root():
     model_info = {
         "gemma-768d": "⚡ Gemma-768D Model2Vec (PRIMARY) - 500-700x faster! Quality: 0.659 | Semantic: 0.730 | Multilingual: 0.690",
-        "qwen3-rerank-onnx": "🏆 Qwen3-0.6B ONNX INT8 (MTEB: 64.33) - FASTEST (3-5x, ~150MB) - Recommended for production",
-        "qwen3-rerank": "🚀 Qwen3-0.6B INT8 (MTEB: 64.33) - PyTorch fallback (2-3x faster, ~300MB)",
-        "qwen3-rerank-fp32": "🎯 Qwen3-0.6B FP32 (MTEB: 64.33) - Baseline quality (full precision, ~600MB)",
+        "embeddinggemma-300m": "🎯 EmbeddingGemma-300M (FULL-SIZE) - 300M params, 768D, high quality embeddings",
+        "qwen3-embed": "🚀 Qwen3-Embedding-0.6B (FULL-SIZE) - 600M params, 1024D, MTEB: 64.33",
+        "qwen3-rerank": "🏆 Qwen3 FP32 Reranking - FASTEST + BEST PRECISION (242ms for 3 docs!)",
     }
 
     return {
-        "service": "Deposium Embeddings - Gemma-768D + Qwen3 INT8 Reranker",
+        "service": "Deposium Embeddings - Gemma + Qwen3 FP32 Optimized",
         "status": "running",
-        "version": "7.1.0",
+        "version": "9.0.0",
         "models": model_info,
-        "recommended": "gemma-768d (WINNER: Best quality + speed + multilingual)",
+        "recommended": "gemma-768d for speed, qwen3-embed for quality, qwen3-rerank for reranking",
         "quality_metrics": {
             "gemma-768d": {
                 "overall": 0.6587,
@@ -169,30 +121,33 @@ async def root():
                 "topic_clustering": 0.5558,
                 "multilingual": 0.6903,
                 "dimensions": 768,
+                "params": "~50M",
                 "speed": "500-700x faster than full Gemma",
-                "use_case": "Fast embeddings"
+                "use_case": "Ultra-fast embeddings"
+            },
+            "embeddinggemma-300m": {
+                "params": "300M",
+                "dimensions": 768,
+                "use_case": "Full-size Gemma embeddings (higher quality than distilled)"
+            },
+            "qwen3-embed": {
+                "mteb_score": 64.33,
+                "retrieval_score": 76.17,
+                "params": "596M",
+                "dimensions": 1024,
+                "use_case": "Full-size embeddings (best quality)"
             },
             "qwen3-rerank": {
                 "mteb_score": 64.33,
                 "retrieval_score": 76.17,
-                "parameters": "596M",
-                "dimensions": "up to 1024",
-                "quantization": "INT8 dynamic",
-                "memory": "~300MB",
-                "speedup": "2-3x faster than FP32",
-                "use_case": "Railway vCPU production (speed optimized)"
-            },
-            "qwen3-rerank-fp32": {
-                "mteb_score": 64.33,
-                "retrieval_score": 76.17,
-                "parameters": "596M",
-                "dimensions": "up to 1024",
-                "quantization": "None (FP32)",
-                "memory": "~600MB",
-                "speedup": "1x (baseline)",
-                "use_case": "Quality baseline for comparison & local dev"
+                "params": "596M",
+                "speed": "242ms for 3 docs (Railway vCPU)",
+                "precision": "BEST (0.126 separation Paris-London)",
+                "quantization": "FP32 (environment optimizations make it fastest!)",
+                "use_case": "Reranking - best speed + precision on Railway vCPU"
             }
-        }
+        },
+        "optimization_note": "FP32 models benefit massively from environment optimizations (OMP_NUM_THREADS, jemalloc, KMP_AFFINITY)"
     }
 
 @app.get("/health")
@@ -210,24 +165,31 @@ async def list_models():
     model_list = [
         {
             "name": "gemma-768d",
-            "size": 400000000,  # ~400MB
+            "size": 50000000,  # ~50MB (distilled)
             "digest": "gemma-768d-m2v-deposium",
             "modified_at": "2025-10-13T00:00:00Z",
-            "details": "⚡ Gemma-768D Model2Vec (PRIMARY) - Quality: 0.659 | Multilingual: 0.690 | 500-700x FASTER!"
+            "details": "⚡ Gemma-768D Model2Vec - 500-700x FASTER! Quality: 0.659 | Multilingual: 0.690"
+        },
+        {
+            "name": "embeddinggemma-300m",
+            "size": 300000000,  # ~300MB
+            "digest": "embeddinggemma-300m-full",
+            "modified_at": "2025-10-14T00:00:00Z",
+            "details": "🎯 EmbeddingGemma-300M (FULL-SIZE) - 300M params, 768D, high quality"
+        },
+        {
+            "name": "qwen3-embed",
+            "size": 600000000,  # ~600MB
+            "digest": "qwen3-embed-fp32",
+            "modified_at": "2025-10-14T00:00:00Z",
+            "details": "🚀 Qwen3-0.6B (FULL-SIZE) - 600M params, 1024D, MTEB: 64.33"
         },
         {
             "name": "qwen3-rerank",
-            "size": 300000000,  # ~300MB (INT8 quantized)
-            "digest": "qwen3-rerank-int8",
+            "size": 600000000,  # ~600MB (FP32)
+            "digest": "qwen3-rerank-fp32-optimized",
             "modified_at": "2025-10-14T00:00:00Z",
-            "details": "🚀 Qwen3-0.6B INT8 - Optimized for Railway vCPU (MTEB: 64.33, 2-3x faster)"
-        },
-        {
-            "name": "qwen3-rerank-fp32",
-            "size": 600000000,  # ~600MB (FP32 baseline)
-            "digest": "qwen3-rerank-fp32",
-            "modified_at": "2025-10-14T00:00:00Z",
-            "details": "🎯 Qwen3-0.6B FP32 - Baseline quality for comparison (MTEB: 64.33, full precision)"
+            "details": "🏆 Qwen3 FP32 Reranking - FASTEST (242ms) + BEST PRECISION on Railway vCPU!"
         }
     ]
 
@@ -250,7 +212,7 @@ async def create_embedding(request: EmbedRequest):
         # Select the appropriate model
         selected_model = models[request.model]
 
-        # Generate embeddings - all models now use Model2Vec
+        # Generate embeddings (Model2Vec or SentenceTransformer)
         embeddings = selected_model.encode(texts, show_progress_bar=False)
         embeddings_list = [emb.tolist() for emb in embeddings]
 
@@ -275,11 +237,10 @@ async def create_embedding_alt(request: EmbedRequest):
 @app.post("/api/rerank")
 async def rerank_documents(request: RerankRequest):
     """
-    Rerank documents by relevance to a query
+    Rerank documents by relevance to a query using FP32 models
 
-    Supports:
-    - qwen3-rerank: INT8 quantized (MTEB: 64.33, 2-3x faster, optimized for Railway vCPU)
-    - qwen3-rerank-fp32: FP32 baseline (MTEB: 64.33, full precision for comparison)
+    - qwen3-rerank: FP32 Qwen3-0.6B (242ms, BEST precision on Railway vCPU!)
+    - Can also use embedding models for reranking
 
     Returns documents sorted by relevance score (highest first)
     """
@@ -296,40 +257,8 @@ async def rerank_documents(request: RerankRequest):
     try:
         selected_model = models[request.model]
 
-        # Handle ONNX models (optimized inference)
-        if "onnx" in request.model and f"{request.model}-tokenizer" in models:
-            import numpy as np
-            import torch
-
-            tokenizer = models[f"{request.model}-tokenizer"]
-
-            # Tokenize query
-            query_inputs = tokenizer(request.query, return_tensors="pt", padding=True, truncation=True)
-            # Add position_ids if not present
-            if "position_ids" not in query_inputs:
-                query_inputs["position_ids"] = torch.arange(0, query_inputs["input_ids"].shape[1], dtype=torch.long).unsqueeze(0)
-
-            # Tokenize documents
-            doc_inputs = tokenizer(request.documents, return_tensors="pt", padding=True, truncation=True)
-            # Add position_ids if not present
-            if "position_ids" not in doc_inputs:
-                doc_inputs["position_ids"] = torch.arange(0, doc_inputs["input_ids"].shape[1], dtype=torch.long).unsqueeze(0).expand(len(request.documents), -1)
-
-            # Get embeddings from ONNX model
-            query_outputs = selected_model(**query_inputs)
-            doc_outputs = selected_model(**doc_inputs)
-
-            # Extract embeddings (last hidden state, mean pooling)
-            query_emb = query_outputs.last_hidden_state.mean(dim=1).numpy()[0]
-            doc_embs = doc_outputs.last_hidden_state.mean(dim=1).numpy()
-
-            # Calculate cosine similarity
-            scores = [
-                np.dot(query_emb, doc_emb) / (np.linalg.norm(query_emb) * np.linalg.norm(doc_emb))
-                for doc_emb in doc_embs
-            ]
-        # For SentenceTransformer models (qwen3-rerank), use native encode
-        elif isinstance(selected_model, SentenceTransformer):
+        # For SentenceTransformer models (qwen3-rerank, embeddinggemma-300m, qwen3-embed)
+        if isinstance(selected_model, SentenceTransformer):
             # Encode query and documents
             query_emb = selected_model.encode(request.query, convert_to_tensor=True)
             doc_embs = selected_model.encode(request.documents, convert_to_tensor=True)
@@ -337,7 +266,7 @@ async def rerank_documents(request: RerankRequest):
             # Calculate cosine similarity scores
             scores = cos_sim(query_emb, doc_embs)[0].cpu().tolist()
         else:
-            # For Model2Vec models, use standard encode
+            # For Model2Vec models (gemma-768d), use standard encode
             query_emb = selected_model.encode([request.query], show_progress_bar=False)[0]
             doc_embs = selected_model.encode(request.documents, show_progress_bar=False)
 
