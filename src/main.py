@@ -57,12 +57,11 @@ async def load_models():
         if device == "cpu":
             # Option 1: ONNX Runtime (BEST - 3-5x faster)
             try:
-                logger.info("Loading Qwen3 with Optimum + ONNX Runtime (INT8)...")
+                logger.info("Loading Qwen3 with Optimum + ONNX Runtime...")
                 from optimum.onnxruntime import ORTModelForFeatureExtraction
-                from optimum.onnxruntime.configuration import OptimizationConfig, AutoOptimizationConfig
                 from transformers import AutoTokenizer
 
-                # Export to ONNX and apply INT8 quantization
+                # Export to ONNX (ONNX Runtime optimizes automatically)
                 onnx_model = ORTModelForFeatureExtraction.from_pretrained(
                     "Qwen/Qwen3-Embedding-0.6B",
                     export=True,
@@ -70,19 +69,12 @@ async def load_models():
                     trust_remote_code=True,
                 )
 
-                # Apply dynamic quantization
-                optimization_config = AutoOptimizationConfig.with_optimization_level(
-                    optimization_level="O2",  # O2 = dynamic quantization INT8
-                    for_gpu=False
-                )
-                onnx_model = onnx_model.optimize(optimization_config)
-
                 models["qwen3-rerank-onnx"] = onnx_model
                 models["qwen3-rerank-onnx-tokenizer"] = AutoTokenizer.from_pretrained(
                     "Qwen/Qwen3-Embedding-0.6B",
                     trust_remote_code=True
                 )
-                logger.info("✅ Qwen3 ONNX INT8 loaded! (~150MB, 3-5x faster)")
+                logger.info("✅ Qwen3 ONNX loaded! (ONNX Runtime auto-optimization)")
             except Exception as e:
                 logger.warning(f"⚠️ ONNX loading failed: {e}")
                 logger.info("Falling back to PyTorch INT8...")
