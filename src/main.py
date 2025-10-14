@@ -72,7 +72,7 @@ async def load_models():
 
                 # Apply dynamic quantization
                 optimization_config = AutoOptimizationConfig.with_optimization_level(
-                    optimization_level=2,  # O2 = dynamic quantization INT8
+                    optimization_level="O2",  # O2 = dynamic quantization INT8
                     for_gpu=False
                 )
                 onnx_model = onnx_model.optimize(optimization_config)
