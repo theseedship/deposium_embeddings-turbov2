@@ -7,7 +7,7 @@ safetensors==0.4.5
 
 # EmbeddingGemma dependencies (PyTorch CPU-only for Railway)
 torch==2.6.0
-transformers==4.46.3
+transformers>=4.50.0  # Qwen3 requires recent transformers (model type 'qwen3')
 sentence-transformers==3.3.1
 
 # Qwen3 Reranker with 4-bit quantization (GPU)
@@ -15,7 +15,8 @@ bitsandbytes==0.45.0
 accelerate==1.2.1
 
 # Optimum + ONNX Runtime for optimized CPU inference
-optimum[onnxruntime]==1.23.3
+# Note: Using latest optimum to support recent transformers versions
+optimum[onnxruntime]>=1.25.0
 onnxruntime==1.20.1
 
 # MTEB for model evaluation (optional, dev only)
