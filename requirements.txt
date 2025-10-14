@@ -10,9 +10,13 @@ torch==2.6.0
 transformers==4.57.0
 sentence-transformers==3.3.1
 
-# Qwen3 Reranker with 4-bit quantization
+# Qwen3 Reranker with 4-bit quantization (GPU)
 bitsandbytes==0.45.0
 accelerate==1.2.1
+
+# Optimum + ONNX Runtime for optimized CPU inference
+optimum[onnxruntime]==1.23.3
+onnxruntime==1.20.1
 
 # MTEB for model evaluation (optional, dev only)
 # mteb==1.18.0
