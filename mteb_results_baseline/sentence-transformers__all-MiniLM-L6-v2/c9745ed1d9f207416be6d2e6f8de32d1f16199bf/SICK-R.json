@@ -1,0 +1,8 @@
+{
+  "dataset_revision": "20a6d6f312dd54037fe07a32d58e5e168867909d",
+  "task_name": "SICK-R",
+  "mteb_version": "1.39.7",
+  "scores": {},
+  "evaluation_time": 4.76837158203125e-06,
+  "kg_co2_emissions": null
+}

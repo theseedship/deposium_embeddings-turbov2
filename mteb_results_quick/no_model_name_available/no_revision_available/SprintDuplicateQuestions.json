@@ -1,0 +1,8 @@
+{
+  "dataset_revision": "d66bd1f72af766a5cc4b0ca5e00c162f89e8cc46",
+  "task_name": "SprintDuplicateQuestions",
+  "mteb_version": "1.39.7",
+  "scores": {},
+  "evaluation_time": 1.2874603271484375e-05,
+  "kg_co2_emissions": null
+}

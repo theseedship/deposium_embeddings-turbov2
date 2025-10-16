@@ -1,0 +1,213 @@
+================================================================================
+INDEX DES FICHIERS - Qwen2.5-7B Distillation Project
+================================================================================
+Date: 2025-10-14
+Total: 12 fichiers créés
+
+================================================================================
+SCRIPTS PYTHON (3 fichiers)
+================================================================================
+
+1. distill_qwen25_7b.py (5.0KB)
+   └─ Description: Script principal de distillation
+   └─ Usage: python3 distill_qwen25_7b.py
+   └─ Durée: 2-4h (GPU) ou 10-20h (CPU)
+
+2. test_qwen25_7b_model.py (5.7KB)
+   └─ Description: Tests de validation du modèle distillé
+   └─ Usage: python3 test_qwen25_7b_model.py
+   └─ Durée: 2 minutes
+
+3. quick_eval_qwen25_7b_1024d.py (13KB)
+   └─ Description: Évaluation complète (6 catégories)
+   └─ Usage: python3 quick_eval_qwen25_7b_1024d.py
+   └─ Durée: 5 minutes
+
+================================================================================
+SCRIPTS SHELL (5 fichiers)
+================================================================================
+
+4. setup_qwen25_7b_env.sh (NOUVEAU)
+   └─ Description: Configuration de l'environnement virtuel et dépendances
+   └─ Usage: ./setup_qwen25_7b_env.sh
+   └─ Durée: 5 minutes
+   └─ Note: À exécuter EN PREMIER
+
+5. run_qwen25_7b_distillation.sh (3.0KB)
+   └─ Description: Pipeline automatisé de distillation
+   └─ Usage: ./run_qwen25_7b_distillation.sh
+   └─ Durée: 2-4h (GPU) ou 10-20h (CPU)
+   └─ Note: Utiliser avec screen/tmux
+
+6. test_qwen25_7b_model.sh (970B)
+   └─ Description: Exécution automatique des tests
+   └─ Usage: ./test_qwen25_7b_model.sh
+   └─ Durée: 2 minutes
+
+7. evaluate_qwen25_7b.sh (1.1KB)
+   └─ Description: Exécution automatique de l'évaluation
+   └─ Usage: ./evaluate_qwen25_7b.sh
+   └─ Durée: 5 minutes
+
+8. deploy_qwen25_7b.sh (8.7KB)
+   └─ Description: Déploiement automatique en production
+   └─ Usage: ./deploy_qwen25_7b.sh
+   └─ Durée: 10 minutes
+   └─ Note: Seulement si score ≥ 91%
+
+================================================================================
+DOCUMENTATION FRANÇAISE (1 fichier)
+================================================================================
+
+9. LISEZMOI_QWEN25_7B.md (NOUVEAU, 13KB)
+   └─ Description: Guide complet en français
+   └─ Usage: cat LISEZMOI_QWEN25_7B.md
+   └─ Contenu: Vue d'ensemble, instructions, troubleshooting
+   └─ Note: LIRE EN PREMIER
+
+================================================================================
+DOCUMENTATION ANGLAISE (3 fichiers)
+================================================================================
+
+10. QWEN25_7B_README.md (7.1KB)
+    └─ Description: Vue d'ensemble du projet (EN)
+    └─ Usage: cat QWEN25_7B_README.md
+    └─ Contenu: Objectifs, specs, deployment
+
+11. QWEN25_7B_QUICKSTART.md (4.6KB)
+    └─ Description: Démarrage rapide (EN)
+    └─ Usage: cat QWEN25_7B_QUICKSTART.md
+    └─ Contenu: 3-step quick start, troubleshooting
+
+12. QWEN25_7B_DISTILLATION_GUIDE.md (7.8KB)
+    └─ Description: Guide de référence complet (EN)
+    └─ Usage: cat QWEN25_7B_DISTILLATION_GUIDE.md
+    └─ Contenu: Prerequisites, configuration, monitoring
+
+13. PRE_DISTILLATION_CHECKLIST.md (NOUVEAU, 8KB)
+    └─ Description: Checklist détaillée pré-distillation
+    └─ Usage: cat PRE_DISTILLATION_CHECKLIST.md
+    └─ Contenu: System checks, config review, monitoring plan
+
+================================================================================
+ORDRE D'EXÉCUTION RECOMMANDÉ
+================================================================================
+
+Phase 1: LECTURE (10 minutes)
+  1. cat LISEZMOI_QWEN25_7B.md        # Vue d'ensemble FR
+  2. cat QWEN25_7B_QUICKSTART.md      # Instructions rapides
+
+Phase 2: SETUP (5 minutes)
+  3. ./setup_qwen25_7b_env.sh         # Configuration environnement
+
+Phase 3: CONFIGURATION (2 minutes)
+  4. nano distill_qwen25_7b.py        # Éditer device="cpu"
+
+Phase 4: DISTILLATION (10-20 heures)
+  5. screen -S distill
+  6. ./run_qwen25_7b_distillation.sh  # Lancer distillation
+  7. Ctrl+A + D                        # Détacher screen
+
+Phase 5: VALIDATION (7 minutes, le lendemain)
+  8. screen -r distill                 # Vérifier logs
+  9. ./test_qwen25_7b_model.sh        # Tests
+  10. ./evaluate_qwen25_7b.sh         # Évaluation
+
+Phase 6: DÉPLOIEMENT (10 minutes, si score ≥ 91%)
+  11. ./deploy_qwen25_7b.sh           # Déploiement production
+
+================================================================================
+FICHIERS GÉNÉRÉS APRÈS DISTILLATION
+================================================================================
+
+models/qwen25-7b-deposium-1024d/
+  ├── config.json                     # Configuration du modèle
+  ├── model.safetensors               # Poids du modèle (~65MB)
+  ├── tokenizer.json                  # Tokenizer Qwen
+  ├── tokenizer_config.json           # Config tokenizer
+  ├── special_tokens_map.json         # Tokens spéciaux
+  └── distillation_metadata.txt       # Métadonnées distillation
+
+DEPLOYMENT_SUMMARY_V11.md             # Créé par deploy_qwen25_7b.sh
+distillation.log                      # Logs (si nohup utilisé)
+activate_env.sh                       # Créé par setup (réactivation)
+
+================================================================================
+TAILLES APPROXIMATIVES
+================================================================================
+
+Scripts Python:      23.7KB (3 fichiers)
+Scripts Shell:       13.8KB (5 fichiers)
+Documentation FR:    13.0KB (1 fichier)
+Documentation EN:    27.5KB (4 fichiers)
+─────────────────────────────────────
+Total scripts/docs:  78.0KB (13 fichiers)
+
+Après distillation:
+  Modèle complet:    ~65MB (models/qwen25-7b-deposium-1024d/)
+  Logs:              ~1-5MB (distillation.log)
+
+================================================================================
+COMMANDES UTILES
+================================================================================
+
+# Lister tous les fichiers du projet
+ls -lh QWEN25_7B_* distill_qwen25_7b* *qwen25_7b*.{sh,py} 2>/dev/null
+
+# Vérifier que tous les scripts sont exécutables
+ls -l *.sh | grep -E '^-rwx'
+
+# Compter les lignes de code
+wc -l *.py *.sh
+
+# Chercher un paramètre dans la config
+grep "device" distill_qwen25_7b.py
+grep "pca_dims" distill_qwen25_7b.py
+
+# Vérifier l'espace disque
+df -h .
+
+# Vérifier la RAM
+free -h
+
+# Vérifier le GPU
+nvidia-smi
+
+# Activer l'environnement
+source venv/bin/activate
+
+# Vérifier les dépendances
+pip list | grep -E "model2vec|torch|transformers"
+
+================================================================================
+SUPPORT & DOCUMENTATION
+================================================================================
+
+Questions générales:        LISEZMOI_QWEN25_7B.md
+Démarrage rapide:           QWEN25_7B_QUICKSTART.md
+Référence complète:         QWEN25_7B_DISTILLATION_GUIDE.md
+Checklist pré-distillation: PRE_DISTILLATION_CHECKLIST.md
+Vue d'ensemble technique:   QWEN25_7B_README.md
+
+Ressources externes:
+  - Model2Vec: https://github.com/MinishLab/model2vec
+  - Qwen2.5:   https://huggingface.co/Qwen/Qwen2.5-7B-Instruct
+  - MTEB:      https://huggingface.co/spaces/mteb/leaderboard
+
+================================================================================
+STATUT DU PROJET
+================================================================================
+
+✅ Préparation:    Terminée (tous les fichiers créés)
+⏳ Configuration:  À faire (./setup_qwen25_7b_env.sh)
+⏳ Distillation:   À lancer (./run_qwen25_7b_distillation.sh)
+⏳ Validation:     Après distillation
+⏳ Déploiement:    Si validation OK (score ≥ 91%)
+
+================================================================================
+PROCHAINE ÉTAPE
+================================================================================
+
+./setup_qwen25_7b_env.sh
+
+================================================================================

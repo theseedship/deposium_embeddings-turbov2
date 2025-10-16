@@ -1,0 +1,8 @@
+{
+  "dataset_revision": "6125ec4e24fa026cec8a478383ee943acfbd5449",
+  "task_name": "TwentyNewsgroupsClustering",
+  "mteb_version": "1.39.7",
+  "scores": {},
+  "evaluation_time": 4.76837158203125e-06,
+  "kg_co2_emissions": null
+}

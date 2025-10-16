@@ -1,0 +1,16 @@
+# MTEB Evaluation Requirements
+
+# Core dependencies
+model2vec>=0.6.0
+torch==2.6.0
+transformers>=4.50.0
+
+# MTEB benchmark
+mteb>=1.12.0
+
+# Additional dependencies for MTEB tasks
+datasets>=2.14.0
+sentence-transformers>=2.2.0
+scikit-learn>=1.0.0
+numpy>=1.21.0
+tqdm>=4.62.0

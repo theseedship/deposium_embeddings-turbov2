@@ -44,3 +44,10 @@ Thumbs.db
 
 # Large model files (downloaded from Hugging Face)
 /models/
+
+# Research archives - exclude large model files only
+research-archives/**/*-deposium-*/
+
+# Virtual environments
+venv_*/
+

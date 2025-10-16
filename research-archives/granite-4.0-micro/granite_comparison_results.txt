@@ -1,0 +1,24 @@
+================================================================================
+GRANITE 4.0 MICRO COMPARISON RESULTS
+================================================================================
+
+Qwen2.5-1.5B (PROD):
+  Quality: 93.46%
+  Instruction-awareness: 7.70%
+  Multilingual: 97.62%
+
+Qwen2.5-3B:
+  Quality: 92.92%
+  Instruction-awareness: 8.66%
+  Multilingual: 95.95%
+
+Granite 4.0 Micro (NEW):
+  Quality: 84.08%
+  Instruction-awareness: 15.21%
+  Multilingual: 88.17%
+
+Gemma-768D:
+  Quality: 58.94%
+  Instruction-awareness: 17.33%
+  Multilingual: 71.50%
+
