@@ -4,13 +4,14 @@ Ce dossier contient tous les benchmarks et comparaisons des modèles d'embedding
 
 ## 🎯 Tableau Comparatif - Modèles Principaux
 
-| Modèle | Dimensions | Taille | Qualité Globale | Instruction-Aware | Recommandation | Statut |
-|--------|------------|--------|-----------------|-------------------|----------------|---------|
-| **qwen25-1024d** ⭐ | 1024 | 65MB | **68.2%** | ✅ **94.9%** | ✅ Deploy | **PRODUCTION** |
-| **gemma-768d** | 768 | 400MB | 65.9% | ❌ | ✅ Deploy | Backup |
-| **qwen3-1024d** | 1024 | 600MB | 37.5% | ❌ | ❌ Do not deploy | Rejected |
-| **qwen3-256d** | 256 | 100MB | 66.5% | ❌ | ⚠️ OK (limité) | Archive |
-| **granite-4.0-micro** | - | - | ~86% (multilingual) | ❌ | ⚠️ Test only | Experimental |
+| Modèle | Dimensions | Taille | Qualité Globale | Instruction-Aware | Code Understanding | Recommandation | Statut |
+|--------|------------|--------|-----------------|-------------------|-------------------|----------------|---------|
+| **qwen25-1024d** ⭐ | 1024 | 65MB | **68.2%** | ✅ **94.9%** | ✅ **84.5%** | ✅ Deploy | **PRODUCTION** |
+| **mxbai-edge-colbert-32m** | Multi-vector | 964MB | **94.4%** | ✅ **95.6%** | ✅ **94.0%** | ❌ Rejected (RAM) | Tested |
+| **gemma-768d** | 768 | 400MB | 65.9% | ❌ | ❌ | ✅ Deploy | Backup |
+| **qwen3-1024d** | 1024 | 600MB | 37.5% | ❌ | ❌ | ❌ Do not deploy | Rejected |
+| **qwen3-256d** | 256 | 100MB | 66.5% | ❌ | ❌ | ⚠️ OK (limité) | Archive |
+| **granite-4.0-micro** | - | - | ~86% (multilingual) | ❌ | ❌ | ⚠️ Test only | Experimental |
 
 ### 🏆 Modèle Recommandé: **qwen25-1024d**
 
@@ -86,6 +87,40 @@ benchmarks/
 - `models/qwen25-1024d/results.json`
 - `models/qwen25-1024d/eval_script.py`
 - `models/qwen25-1024d/distill_qwen25_1024d.py`
+
+### 🔍 mxbai-edge-colbert-32m (Tested - Rejected for RAM)
+
+**Architecture:** Multi-vector (ColBERT) - Late interaction, token-level matching
+
+**Scores détaillés:**
+- **Overall Quality: 94.4%** 🎯 (meilleur testé!)
+- **Semantic Similarity: 93.6%**
+- **Instruction Awareness: 95.6%** (+0.7% vs qwen25)
+- **Code Understanding: 94.0%** (+9.5% vs qwen25) 🚀
+- **Multilingue: FR 91.97%, ES 92.47%, DE 90.26%** (< 4% dégradation vs EN)
+- **Encoding Speed: 5.94 ms/text** (très rapide)
+- Model Size: 964 MB
+- RAM Total: 1.38 GB
+
+**Pourquoi rejeté:**
+- ❌ **+964MB RAM overhead** (15x plus gros que qwen25: 65MB)
+- ❌ Multi-vector incompatible avec stack actuelle
+- ❌ Distillation Model2Vec impossible (architecture incompatible)
+- ❌ Rapport qualité/RAM: 0.098% /MB vs qwen25: 1.05% /MB (10.7x moins efficient)
+
+**Conclusion:**
+- ✅ Excellente qualité technique (+26.2% vs qwen25)
+- ❌ Overhead infrastructure trop important pour notre use case edge
+- 📚 **Archivé comme référence "gold standard" (94.4%)**
+- 🎯 Confirme que qwen25-1024d est un excellent compromis
+
+**Fichiers:**
+- `models/mxbai-edge-colbert-32m/DECISION.md` ← **Document de décision complet**
+- `models/mxbai-edge-colbert-32m/results.txt`
+- `models/mxbai-edge-colbert-32m/test_colbert.py`
+- `models/mxbai-edge-colbert-32m/test_multilingual.py`
+- `models/mxbai-edge-colbert-32m/README.md`
+- `COLBERT_TESTING.md` (guide complet)
 
 ### ⚡ Gemma-768D (Backup)
 
