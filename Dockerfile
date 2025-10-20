@@ -30,6 +30,11 @@ ENV HF_HOME=/app/models
 # Install Python dependencies
 WORKDIR /app
 COPY requirements.txt .
+
+# Install PyTorch CPU-only version first (saves 2-3GB RAM by excluding CUDA)
+RUN pip install --no-cache-dir torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+
+# Then install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
@@ -56,5 +61,6 @@ EXPOSE 11435
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD ["python", "-c", "import requests; requests.get('http://localhost:11435/health', timeout=5)"]
 
-# Run FastAPI
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "11435"]
+# Run FastAPI with PORT from environment (Railway auto-injects PORT)
+# Use shell form to allow environment variable substitution
+CMD uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-11435}
