@@ -54,12 +54,14 @@ RUN mkdir -p /app/models/transformers
 # The Railway volume is mounted with root permissions and cannot be written by non-root user
 # This is safe as the container is isolated by Railway's infrastructure
 
-# Expose port
+# Expose port (Railway will override this with its own PORT)
 EXPOSE 11435
 
-# Add healthcheck
+# Add healthcheck using the PORT environment variable
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD ["python", "-c", "import requests; requests.get('http://localhost:11435/health', timeout=5)"]
+  CMD python -c "import requests, os; requests.get(f'http://localhost:{os.environ.get(\"PORT\", \"11435\")}/health', timeout=5)"
 
-# Run FastAPI
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "11435"]
+# Run FastAPI with PORT from environment (Railway auto-injects PORT)
+# Use environment variable HOST (default to 0.0.0.0) for flexibility
+# Set HOST=:: in Railway environment for IPv6 support
+CMD uvicorn src.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-11435}
