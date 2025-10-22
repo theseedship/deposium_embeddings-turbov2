@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException, File, UploadFile, Header, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 from model2vec import StaticModel
@@ -27,6 +27,37 @@ app = FastAPI(
 
 # Initialize model manager
 model_manager = None
+
+
+# ============================================================================
+# Authentication
+# ============================================================================
+
+async def verify_api_key(x_api_key: str = Header(..., description="API Key for authentication")):
+    """
+    Verify API key from X-API-Key header.
+
+    Environment variable: EMBEDDINGS_API_KEY
+
+    If EMBEDDINGS_API_KEY is not set, authentication is disabled (dev mode).
+    """
+    expected_key = os.getenv("EMBEDDINGS_API_KEY")
+
+    # Dev mode: allow if no key configured
+    if not expected_key:
+        logger.warning("⚠️ EMBEDDINGS_API_KEY not configured - authentication disabled!")
+        return "dev-mode"
+
+    # Validate key
+    if x_api_key != expected_key:
+        logger.warning(f"Invalid API key attempt: {x_api_key[:10]}...")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key",
+            headers={"WWW-Authenticate": "ApiKey"}
+        )
+
+    return x_api_key
 
 @app.on_event("startup")
 async def initialize_models():
@@ -218,7 +249,7 @@ async def list_models():
     return {"models": model_list}
 
 @app.post("/api/embed")
-async def create_embedding(request: EmbedRequest):
+async def create_embedding(request: EmbedRequest, api_key: str = Depends(verify_api_key)):
     """Ollama-compatible embedding endpoint with multi-model support"""
     global model_manager
     
@@ -255,12 +286,12 @@ async def create_embedding(request: EmbedRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/embeddings")
-async def create_embedding_alt(request: EmbedRequest):
+async def create_embedding_alt(request: EmbedRequest, api_key: str = Depends(verify_api_key)):
     """Alternative endpoint (some clients use /api/embeddings)"""
-    return await create_embedding(request)
+    return await create_embedding(request, api_key)
 
 @app.post("/api/rerank")
-async def rerank_documents(request: RerankRequest):
+async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify_api_key)):
     """
     Rerank documents by relevance to a query using FP32 models
 
@@ -336,13 +367,14 @@ async def rerank_documents(request: RerankRequest):
 
 
 @app.post("/api/classify/file")
-async def classify_document_file(file: UploadFile = File(...)):
+async def classify_document_file(file: UploadFile = File(...), api_key: str = Depends(verify_api_key)):
     """
     Classify document complexity from uploaded file (multipart/form-data).
 
     **Usage:**
     ```bash
     curl -X POST http://localhost:11435/api/classify/file \\
+      -H "X-API-Key: YOUR_API_KEY" \\
       -F "file=@document.jpg"
     ```
 
@@ -378,13 +410,14 @@ async def classify_document_file(file: UploadFile = File(...)):
 
 
 @app.post("/api/classify/base64")
-async def classify_document_base64(request: ClassifyRequest):
+async def classify_document_base64(request: ClassifyRequest, api_key: str = Depends(verify_api_key)):
     """
     Classify document complexity from base64 encoded image (application/json).
 
     **Usage:**
     ```bash
     curl -X POST http://localhost:11435/api/classify/base64 \\
+      -H "X-API-Key: YOUR_API_KEY" \\
       -H "Content-Type: application/json" \\
       -d '{"image":"data:image/jpeg;base64,/9j/4AAQ..."}'
     ```
