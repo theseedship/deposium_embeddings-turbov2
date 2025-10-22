@@ -62,6 +62,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD python -c "import requests, os; requests.get(f'http://localhost:{os.environ.get(\"PORT\", \"11435\")}/health', timeout=5)"
 
 # Run FastAPI with PORT from environment (Railway auto-injects PORT)
-# Use environment variable HOST (default to 0.0.0.0) for flexibility
-# Set HOST=:: in Railway environment for IPv6 support
-CMD uvicorn src.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-11435}
+# Force 0.0.0.0 binding for Railway IPv4+IPv6 dual-stack support
+# Railway's internal networking requires IPv4 compatibility for external access
+CMD uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-11435}
