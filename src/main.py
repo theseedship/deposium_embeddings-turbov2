@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile, Header, Depends
+from fastapi import FastAPI, HTTPException, File, UploadFile, Header, Depends, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from model2vec import StaticModel
@@ -33,10 +33,7 @@ model_manager = None
 # Authentication
 # ============================================================================
 
-async def verify_api_key(
-    authorization: Optional[str] = Header(None),
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
-):
+async def verify_api_key(request: Request):
     """
     Verify API key from either Authorization Bearer or X-API-Key header.
 
@@ -59,12 +56,18 @@ async def verify_api_key(
     token = None
     auth_method = None
 
+    # Try Authorization: Bearer header
+    authorization = request.headers.get("authorization")
     if authorization and authorization.startswith("Bearer "):
         token = authorization[7:]  # Remove "Bearer " prefix
         auth_method = "Bearer"
-    elif x_api_key:
-        token = x_api_key
-        auth_method = "X-API-Key"
+
+    # Try X-API-Key header if Bearer not found
+    if not token:
+        x_api_key = request.headers.get("x-api-key")
+        if x_api_key:
+            token = x_api_key
+            auth_method = "X-API-Key"
 
     # Validate token
     if not token or token != expected_key:
