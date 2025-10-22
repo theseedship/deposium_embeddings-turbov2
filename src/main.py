@@ -8,7 +8,6 @@ from sentence_transformers.util import cos_sim
 from pathlib import Path
 import logging
 import os
-import asyncio
 
 # Import classifier module
 from .classifier import get_classifier, ClassifyRequest
@@ -28,18 +27,6 @@ app = FastAPI(
 
 # Initialize model manager
 model_manager = None
-
-# Periodic cleanup task
-async def periodic_cleanup():
-    """Periodically cleanup inactive models to save memory."""
-    logger.info(f"Starting periodic cleanup task (checks every 30s, timeout from AUTO_UNLOAD_MODELS_TIME={os.getenv('AUTO_UNLOAD_MODELS_TIME', '180')}s)")
-    while True:
-        await asyncio.sleep(30)  # Check every 30 seconds
-        if model_manager:
-            try:
-                model_manager.cleanup_inactive_models()  # Uses AUTO_UNLOAD_MODELS_TIME env var
-            except Exception as e:
-                logger.error(f"Error during periodic cleanup: {e}")
 
 @app.on_event("startup")
 async def initialize_models():
@@ -63,21 +50,21 @@ async def initialize_models():
     
     logger.info("\nModel Loading Strategy:")
     logger.info("  • Lazy loading: Models loaded only when needed")
-    logger.info(f"  • Auto-unloading: After {os.getenv('AUTO_UNLOAD_MODELS_TIME', '180')} seconds of inactivity")
-    logger.info("  • Memory optimization: All models have equal priority")
+    logger.info("  • Priority system: High-priority models stay in VRAM")
+    logger.info("  • Auto-unloading: Frees VRAM when limit exceeded")
     
     logger.info("\nAvailable Models:")
-    logger.info("  • qwen25-1024d: Instruction-aware embeddings")
-    logger.info("  • gemma-768d: Multilingual embeddings")
-    logger.info("  • qwen3-rerank: Document reranking")
-    logger.info("  • qwen3-embed: Full-size embeddings")
-    logger.info("  • vl-classifier: Visual document complexity classification")
+    logger.info("  • qwen25-1024d: Instruction-aware embeddings (priority: 10)")
+    logger.info("  • gemma-768d: Multilingual embeddings (priority: 5)")
+    logger.info("  • qwen3-rerank: Document reranking (priority: 8)")
+    logger.info("  • embeddinggemma-300m: Full-size embeddings (priority: 2)")
+    logger.info("  • qwen3-embed: Full-size embeddings (priority: 7)")
     
-    # Start periodic cleanup task
-    asyncio.create_task(periodic_cleanup())
-    logger.info("  • Started automatic cleanup task (checks every 30s)")
+    # Optionally preload high-priority models
+    # Disabled by default to minimize startup VRAM usage
+    # model_manager.preload_priority_models()
     
-    logger.info("✅ Model Manager initialized! Models will load on demand and unload after 3 minutes of inactivity.")
+    logger.info("✅ Model Manager initialized! Models will load on first use.")
 
 # Request/Response models
 class EmbedRequest(BaseModel):
@@ -348,56 +335,82 @@ async def rerank_documents(request: RerankRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/classify")
-async def classify_document(
-    request: ClassifyRequest = None,
-    file: UploadFile = File(None)
-):
+@app.post("/api/classify/file")
+async def classify_document_file(file: UploadFile = File(...)):
     """
-    Classify document complexity for intelligent routing.
+    Classify document complexity from uploaded file (multipart/form-data).
 
-    Supports two input methods:
-    1. JSON with base64 image: {"image": "data:image/jpeg;base64,..."}
-    2. Multipart file upload: file=@document.jpg
+    **Usage:**
+    ```bash
+    curl -X POST http://localhost:11435/api/classify/file \\
+      -F "file=@document.jpg"
+    ```
 
-    Returns:
+    **Returns:**
     - class_name: "LOW" (simple OCR) or "HIGH" (VLM reasoning)
     - confidence: 0.0-1.0
     - probabilities: {"LOW": float, "HIGH": float}
     - routing_decision: str (routing recommendation)
     - latency_ms: float
 
-    Use case: Route LOW complexity to OCR (~100ms), HIGH to VLM (~2000ms)
+    **Use case:** Route LOW complexity to OCR (~100ms), HIGH to VLM (~2000ms)
     """
     try:
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type: {file.content_type}. Expected image/*"
+            )
+
         # Get classifier (lazy loading)
         classifier = get_classifier()
 
+        # Predict
+        result = await classifier.predict_from_file(file)
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Classification error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/classify/base64")
+async def classify_document_base64(request: ClassifyRequest):
+    """
+    Classify document complexity from base64 encoded image (application/json).
+
+    **Usage:**
+    ```bash
+    curl -X POST http://localhost:11435/api/classify/base64 \\
+      -H "Content-Type: application/json" \\
+      -d '{"image":"data:image/jpeg;base64,/9j/4AAQ..."}'
+    ```
+
+    **Returns:**
+    - class_name: "LOW" (simple OCR) or "HIGH" (VLM reasoning)
+    - confidence: 0.0-1.0
+    - probabilities: {"LOW": float, "HIGH": float}
+    - routing_decision: str (routing recommendation)
+    - latency_ms: float
+
+    **Use case:** Route LOW complexity to OCR (~100ms), HIGH to VLM (~2000ms)
+    """
+    try:
         # Validate input
-        if request is None and file is None:
+        if request.image is None:
             raise HTTPException(
                 status_code=400,
-                detail="Either 'image' in JSON body or 'file' in multipart required"
+                detail="Missing 'image' field in JSON body"
             )
 
-        # Route to appropriate prediction method
-        if file is not None:
-            # File upload (multipart/form-data)
-            if not file.content_type.startswith('image/'):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid file type: {file.content_type}. Expected image/*"
-                )
-            result = await classifier.predict_from_file(file)
-        elif request is not None and request.image is not None:
-            # Base64 image (JSON)
-            result = await classifier.predict_from_base64(request.image)
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="No image provided. Send 'image' (base64) in JSON or 'file' in multipart"
-            )
+        # Get classifier (lazy loading)
+        classifier = get_classifier()
 
+        # Predict
+        result = await classifier.predict_from_base64(request.image)
         return result
 
     except HTTPException:
