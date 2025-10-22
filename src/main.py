@@ -33,9 +33,16 @@ model_manager = None
 # Authentication
 # ============================================================================
 
-async def verify_api_key(x_api_key: str = Header(..., description="API Key for authentication")):
+async def verify_api_key(
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+):
     """
-    Verify API key from X-API-Key header.
+    Verify API key from either Authorization Bearer or X-API-Key header.
+
+    Supports two authentication formats:
+    - Authorization: Bearer <token> (Ollama standard - N8N compatible)
+    - X-API-Key: <token> (Custom header - backward compatible)
 
     Environment variable: EMBEDDINGS_API_KEY
 
@@ -48,16 +55,28 @@ async def verify_api_key(x_api_key: str = Header(..., description="API Key for a
         logger.warning("⚠️ EMBEDDINGS_API_KEY not configured - authentication disabled!")
         return "dev-mode"
 
-    # Validate key
-    if x_api_key != expected_key:
-        logger.warning(f"Invalid API key attempt: {x_api_key[:10]}...")
+    # Extract token from headers (try both formats)
+    token = None
+    auth_method = None
+
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]  # Remove "Bearer " prefix
+        auth_method = "Bearer"
+    elif x_api_key:
+        token = x_api_key
+        auth_method = "X-API-Key"
+
+    # Validate token
+    if not token or token != expected_key:
+        logger.warning(f"Invalid API key attempt (method: {auth_method or 'none'})")
         raise HTTPException(
             status_code=401,
-            detail="Invalid or missing API key",
-            headers={"WWW-Authenticate": "ApiKey"}
+            detail="Invalid or missing API key. Use 'Authorization: Bearer <token>' or 'X-API-Key: <token>' header",
+            headers={"WWW-Authenticate": "Bearer"}
         )
 
-    return x_api_key
+    logger.debug(f"✅ Authentication successful (method: {auth_method})")
+    return token
 
 @app.on_event("startup")
 async def initialize_models():
