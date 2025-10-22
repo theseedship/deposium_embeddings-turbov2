@@ -8,6 +8,7 @@ from sentence_transformers.util import cos_sim
 from pathlib import Path
 import logging
 import os
+import asyncio
 
 # Import classifier module
 from .classifier import get_classifier, ClassifyRequest
@@ -27,6 +28,17 @@ app = FastAPI(
 
 # Initialize model manager
 model_manager = None
+
+# Periodic cleanup task
+async def periodic_cleanup():
+    """Periodically cleanup inactive models to save memory."""
+    while True:
+        await asyncio.sleep(30)  # Check every 30 seconds
+        if model_manager:
+            try:
+                model_manager.cleanup_inactive_models(180)  # Unload after 180s of inactivity
+            except Exception as e:
+                logger.error(f"Error during periodic cleanup: {e}")
 
 @app.on_event("startup")
 async def initialize_models():
@@ -50,21 +62,21 @@ async def initialize_models():
     
     logger.info("\nModel Loading Strategy:")
     logger.info("  • Lazy loading: Models loaded only when needed")
-    logger.info("  • Priority system: High-priority models stay in VRAM")
-    logger.info("  • Auto-unloading: Frees VRAM when limit exceeded")
+    logger.info("  • Auto-unloading: After 180 seconds of inactivity")
+    logger.info("  • Memory optimization: All models have equal priority")
     
     logger.info("\nAvailable Models:")
-    logger.info("  • qwen25-1024d: Instruction-aware embeddings (priority: 10)")
-    logger.info("  • gemma-768d: Multilingual embeddings (priority: 5)")
-    logger.info("  • qwen3-rerank: Document reranking (priority: 8)")
-    logger.info("  • embeddinggemma-300m: Full-size embeddings (priority: 2)")
-    logger.info("  • qwen3-embed: Full-size embeddings (priority: 7)")
+    logger.info("  • qwen25-1024d: Instruction-aware embeddings")
+    logger.info("  • gemma-768d: Multilingual embeddings")
+    logger.info("  • qwen3-rerank: Document reranking")
+    logger.info("  • embeddinggemma-300m: Full-size embeddings")
+    logger.info("  • qwen3-embed: Full-size embeddings")
     
-    # Optionally preload high-priority models
-    # Disabled by default to minimize startup VRAM usage
-    # model_manager.preload_priority_models()
+    # Start periodic cleanup task
+    asyncio.create_task(periodic_cleanup())
+    logger.info("  • Started automatic cleanup task (checks every 30s)")
     
-    logger.info("✅ Model Manager initialized! Models will load on first use.")
+    logger.info("✅ Model Manager initialized! Models will load on demand and unload after 3 minutes of inactivity.")
 
 # Request/Response models
 class EmbedRequest(BaseModel):

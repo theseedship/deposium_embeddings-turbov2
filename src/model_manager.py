@@ -34,13 +34,9 @@ except ImportError:
 # Quantization imports for memory optimization
 try:
     from transformers import BitsAndBytesConfig
-    import bitsandbytes as bnb
-    # Test if CUDA support is available
-    try:
-        test_tensor = torch.randn(1, 1).cuda() if torch.cuda.is_available() else None
-        BNB_AVAILABLE = True
-    except:
-        BNB_AVAILABLE = False
+    # Only test BitsAndBytesConfig availability, not bitsandbytes itself
+    # to avoid import errors on systems without proper GPU support
+    BNB_AVAILABLE = True
 except ImportError:
     BitsAndBytesConfig = None
     BNB_AVAILABLE = False
@@ -97,7 +93,7 @@ class ModelManager:
             type="model2vec",
             path="models/qwen25-deposium-1024d",
             hub_id="tss-deposium/qwen25-deposium-1024d",
-            priority=10,  # Highest priority - always keep in memory
+            priority=1,  # Equal priority for all models
             estimated_vram_mb=500,
             device=self.device
         )
@@ -108,7 +104,7 @@ class ModelManager:
             type="model2vec",
             path="models/gemma-deposium-768d",
             hub_id="tss-deposium/gemma-deposium-768d",
-            priority=5,  # Medium priority
+            priority=1,  # Equal priority for all models
             estimated_vram_mb=800,
             device=self.device
         )
@@ -118,7 +114,7 @@ class ModelManager:
             name="embeddinggemma-300m",
             type="sentence_transformer",
             hub_id="google/embeddinggemma-300m",
-            priority=2,  # Low priority
+            priority=1,  # Equal priority for all models
             estimated_vram_mb=1000,
             device=self.device
         )
@@ -128,7 +124,7 @@ class ModelManager:
             name="qwen3-embed",
             type="sentence_transformer",
             hub_id="Qwen/Qwen3-Embedding-0.6B",
-            priority=7,  # High priority for reranking
+            priority=1,  # Equal priority for all models
             estimated_vram_mb=1200,  # ~2GB with float16 (was 4GB with float32)
             device=self.device
         )
@@ -138,7 +134,7 @@ class ModelManager:
             name="qwen3-rerank",
             type="alias",
             path="qwen3-embed",  # Points to qwen3-embed
-            priority=8,  # High priority
+            priority=1,  # Equal priority for all models
             estimated_vram_mb=0,  # No additional VRAM (alias)
             device=self.device
         )
@@ -391,6 +387,34 @@ class ModelManager:
             except Exception as e:
                 logger.warning(f"Could not preload {name}: {e}")
                 
+    def cleanup_inactive_models(self, timeout_seconds: int = 180):
+        """
+        Unload models that haven't been used for timeout_seconds.
+        
+        Args:
+            timeout_seconds: Seconds of inactivity before unloading (default 180)
+        """
+        current_time = time.time()
+        models_to_unload = []
+        
+        # Find inactive models
+        for name in list(self.models.keys()):
+            last_used = self.last_used.get(name, 0)
+            inactive_time = current_time - last_used
+            
+            if inactive_time > timeout_seconds:
+                models_to_unload.append((name, inactive_time))
+        
+        # Unload inactive models
+        for name, inactive_time in models_to_unload:
+            logger.info(f"Auto-unloading {name} after {inactive_time:.0f}s of inactivity")
+            self._unload_model(name)
+        
+        # Log status if any models were unloaded
+        if models_to_unload:
+            used_mb, free_mb = self.get_vram_usage_mb()
+            logger.info(f"Cleanup complete. VRAM: {used_mb}MB used, {free_mb}MB free")
+    
     def get_status(self) -> Dict:
         """
         Get status of model manager.
