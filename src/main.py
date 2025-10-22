@@ -88,8 +88,7 @@ async def initialize_models():
     logger.info("  • qwen25-1024d: Instruction-aware embeddings (priority: 10)")
     logger.info("  • gemma-768d: Multilingual embeddings (priority: 5)")
     logger.info("  • qwen3-rerank: Document reranking (priority: 8)")
-    logger.info("  • embeddinggemma-300m: Full-size embeddings (priority: 2)")
-    logger.info("  • qwen3-embed: Full-size embeddings (priority: 7)")
+    logger.info("  • vl-classifier: Document complexity classifier (ONNX, standalone)")
     
     # Optionally preload high-priority models
     # Disabled by default to minimize startup VRAM usage
@@ -121,17 +120,16 @@ async def root():
     model_info = {
         "qwen25-1024d": "🔥 Qwen25-1024D (PRIMARY) - Instruction-Aware! Quality: 0.841 | Instruction: 0.953 | 65MB",
         "gemma-768d": "⚡ Gemma-768D Model2Vec (SECONDARY) - 500-700x faster! Quality: 0.551 | Multilingual: 0.737",
-        "embeddinggemma-300m": "🎯 EmbeddingGemma-300M (FULL-SIZE) - 300M params, 768D, high quality embeddings",
-        "qwen3-embed": "🚀 Qwen3-Embedding-0.6B (FULL-SIZE) - 600M params, 1024D, MTEB: 64.33",
         "qwen3-rerank": "🏆 Qwen3 FP32 Reranking - FASTEST + BEST PRECISION (242ms for 3 docs!)",
+        "vl-classifier": "🎯 Document Complexity Classifier - ResNet18 ONNX INT8 (93% accuracy, ~10ms)",
     }
 
     return {
-        "service": "Deposium Embeddings - Qwen25 Instruction-Aware + Full-Size Models",
+        "service": "Deposium Embeddings - Qwen25 + Gemma + Rerank + Classifier",
         "status": "running",
-        "version": "10.0.0",
+        "version": "10.1.0",
         "models": model_info,
-        "recommended": "qwen25-1024d for instruction-aware + quality, gemma-768d for multilingual, qwen3-rerank for reranking",
+        "recommended": "qwen25-1024d for embeddings, qwen3-rerank for reranking, vl-classifier for routing",
         "quality_metrics": {
             "qwen25-1024d": {
                 "overall": 0.841,
@@ -158,18 +156,6 @@ async def root():
                 "speed": "500-700x faster than full Gemma",
                 "use_case": "Secondary - multilingual support"
             },
-            "embeddinggemma-300m": {
-                "params": "300M",
-                "dimensions": 768,
-                "use_case": "Full-size Gemma embeddings (higher quality than distilled)"
-            },
-            "qwen3-embed": {
-                "mteb_score": 64.33,
-                "retrieval_score": 76.17,
-                "params": "596M",
-                "dimensions": 1024,
-                "use_case": "Full-size embeddings (best quality)"
-            },
             "qwen3-rerank": {
                 "mteb_score": 64.33,
                 "retrieval_score": 76.17,
@@ -178,6 +164,16 @@ async def root():
                 "precision": "BEST (0.126 separation Paris-London)",
                 "quantization": "FP32 (environment optimizations make it fastest!)",
                 "use_case": "Reranking - best speed + precision on Railway vCPU"
+            },
+            "vl-classifier": {
+                "architecture": "ResNet18 ONNX INT8",
+                "accuracy": 0.93,
+                "high_recall": 1.00,
+                "params": "11M",
+                "latency": "10-17ms on CPU",
+                "size_mb": 11,
+                "classes": ["LOW", "HIGH"],
+                "use_case": "Document routing - simple (OCR) vs complex (VLM)"
             }
         },
         "optimization_note": "FP32 models benefit massively from environment optimizations (OMP_NUM_THREADS, jemalloc, KMP_AFFINITY)"
@@ -224,25 +220,18 @@ async def list_models():
             "details": "⚡ Gemma-768D (SECONDARY) - Quality: 0.551 | Multilingual: 0.737"
         },
         {
-            "name": "embeddinggemma-300m",
-            "size": 300000000,  # ~300MB
-            "digest": "embeddinggemma-300m-full",
-            "modified_at": "2025-10-14T00:00:00Z",
-            "details": "🎯 EmbeddingGemma-300M (FULL-SIZE) - 300M params, 768D, high quality"
-        },
-        {
-            "name": "qwen3-embed",
-            "size": 600000000,  # ~600MB
-            "digest": "qwen3-embed-fp32",
-            "modified_at": "2025-10-14T00:00:00Z",
-            "details": "🚀 Qwen3-0.6B (FULL-SIZE) - 600M params, 1024D, MTEB: 64.33"
-        },
-        {
             "name": "qwen3-rerank",
             "size": 600000000,  # ~600MB (FP32)
             "digest": "qwen3-rerank-fp32-optimized",
             "modified_at": "2025-10-14T00:00:00Z",
             "details": "🏆 Qwen3 FP32 Reranking - FASTEST (242ms) + BEST PRECISION on Railway vCPU!"
+        },
+        {
+            "name": "vl-classifier",
+            "size": 11000000,  # ~11MB
+            "digest": "resnet18-onnx-int8",
+            "modified_at": "2025-10-22T00:00:00Z",
+            "details": "🎯 Document Complexity Classifier - 93% accuracy, ~10ms latency"
         }
     ]
 
@@ -317,7 +306,7 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify
         # Get model (lazy loading)
         selected_model = model_manager.get_model(request.model)
 
-        # For SentenceTransformer models (qwen3-rerank, embeddinggemma-300m, qwen3-embed)
+        # For SentenceTransformer models (qwen3-rerank)
         if isinstance(selected_model, SentenceTransformer):
             # Encode query and documents
             query_emb = selected_model.encode(request.query, convert_to_tensor=True)
