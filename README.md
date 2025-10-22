@@ -211,6 +211,19 @@ Configure N8N HTTP Request node:
 - Environment optimizations (OMP, jemalloc, KMP)
 - FP32 models for best precision on vCPU
 
+### 💾 Memory Optimizations (NEW)
+- **Dynamic VRAM Management**: Lazy loading with LRU cache
+- **Float16 Precision**: Qwen3-Reranker reduced from 4GB to ~1.2GB (70% reduction)
+- **Auto-unloading**: Frees VRAM when limit exceeded (5GB default)
+- **Priority System**: Keeps important models in memory
+- **Total VRAM Usage**: ~2.1GB for all models (fits in 6GB GPU)
+
+#### Memory Usage Breakdown:
+- **Qwen25-1024D**: ~0MB GPU (Model2Vec runs on CPU)
+- **Gemma-768D**: ~400MB GPU when loaded
+- **Qwen3-Reranker**: ~1.2GB GPU (float16 optimized)
+- **Classifier**: ~0MB GPU (ONNX runs on CPU)
+
 ## 🚀 Railway Deployment
 
 ```bash

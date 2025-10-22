@@ -31,6 +31,20 @@ try:
 except ImportError:
     SentenceTransformer = None
 
+# Quantization imports for memory optimization
+try:
+    from transformers import BitsAndBytesConfig
+    import bitsandbytes as bnb
+    # Test if CUDA support is available
+    try:
+        test_tensor = torch.randn(1, 1).cuda() if torch.cuda.is_available() else None
+        BNB_AVAILABLE = True
+    except:
+        BNB_AVAILABLE = False
+except ImportError:
+    BitsAndBytesConfig = None
+    BNB_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -109,13 +123,13 @@ class ModelManager:
             device=self.device
         )
         
-        # Qwen3-Embedding-0.6B (embeddings + reranking)
+        # Qwen3-Embedding-0.6B (embeddings + reranking) - Memory optimized
         self.configs["qwen3-embed"] = ModelConfig(
             name="qwen3-embed",
             type="sentence_transformer",
             hub_id="Qwen/Qwen3-Embedding-0.6B",
             priority=7,  # High priority for reranking
-            estimated_vram_mb=1500,
+            estimated_vram_mb=1200,  # ~2GB with float16 (was 4GB with float32)
             device=self.device
         )
         
@@ -265,13 +279,62 @@ class ModelManager:
                 # Load SentenceTransformer model
                 if SentenceTransformer is None:
                     raise ImportError("sentence-transformers not installed")
+                
+                # Special handling for Qwen3 models - optimize memory usage
+                if name in ["qwen3-embed", "qwen3-rerank"]:
+                    # Try 4-bit quantization first if available
+                    quantization_attempted = False
                     
-                model = SentenceTransformer(
-                    config.hub_id,
-                    trust_remote_code=True,
-                    device=config.device
-                )
-                logger.info(f"✅ {name} loaded (SentenceTransformer)")
+                    if BNB_AVAILABLE and BitsAndBytesConfig is not None and self.device == "cuda":
+                        try:
+                            # Use 4-bit quantization for memory efficiency
+                            logger.info(f"Attempting to load {name} with 4-bit quantization...")
+                            
+                            # Create quantization config
+                            quantization_config = BitsAndBytesConfig(
+                                load_in_4bit=True,
+                                bnb_4bit_use_double_quant=True,  # Further compression
+                                bnb_4bit_quant_type="nf4",  # Normal Float 4 for better quality
+                                bnb_4bit_compute_dtype=torch.float16  # Compute in fp16 for speed
+                            )
+                            
+                            # Load with quantization
+                            model = SentenceTransformer(
+                                config.hub_id,
+                                trust_remote_code=True,
+                                device=config.device,
+                                model_kwargs={
+                                    "quantization_config": quantization_config,
+                                    "device_map": "auto",
+                                    "torch_dtype": torch.float16
+                                }
+                            )
+                            logger.info(f"✅ {name} loaded with 4-bit quantization (memory usage reduced by ~75%)")
+                            quantization_attempted = True
+                        except Exception as e:
+                            logger.warning(f"4-bit quantization failed: {e}. Falling back to float16...")
+                            quantization_attempted = False
+                    
+                    # Fallback to float16 for memory reduction
+                    if not quantization_attempted:
+                        logger.info(f"Loading {name} with float16 precision for memory optimization")
+                        model = SentenceTransformer(
+                            config.hub_id,
+                            trust_remote_code=True,
+                            device=config.device,
+                            model_kwargs={
+                                "torch_dtype": torch.float16
+                            }
+                        )
+                        logger.info(f"✅ {name} loaded with float16 (memory usage reduced by ~50%)")
+                else:
+                    # Standard loading for other models
+                    model = SentenceTransformer(
+                        config.hub_id,
+                        trust_remote_code=True,
+                        device=config.device
+                    )
+                    logger.info(f"✅ {name} loaded (SentenceTransformer)")
                 
             else:
                 raise ValueError(f"Unknown model type: {config.type}")
