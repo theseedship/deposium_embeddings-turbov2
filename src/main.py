@@ -32,11 +32,12 @@ model_manager = None
 # Periodic cleanup task
 async def periodic_cleanup():
     """Periodically cleanup inactive models to save memory."""
+    logger.info(f"Starting periodic cleanup task (checks every 30s, timeout from AUTO_UNLOAD_MODELS_TIME={os.getenv('AUTO_UNLOAD_MODELS_TIME', '180')}s)")
     while True:
         await asyncio.sleep(30)  # Check every 30 seconds
         if model_manager:
             try:
-                model_manager.cleanup_inactive_models(180)  # Unload after 180s of inactivity
+                model_manager.cleanup_inactive_models()  # Uses AUTO_UNLOAD_MODELS_TIME env var
             except Exception as e:
                 logger.error(f"Error during periodic cleanup: {e}")
 
@@ -62,15 +63,15 @@ async def initialize_models():
     
     logger.info("\nModel Loading Strategy:")
     logger.info("  • Lazy loading: Models loaded only when needed")
-    logger.info("  • Auto-unloading: After 180 seconds of inactivity")
+    logger.info(f"  • Auto-unloading: After {os.getenv('AUTO_UNLOAD_MODELS_TIME', '180')} seconds of inactivity")
     logger.info("  • Memory optimization: All models have equal priority")
     
     logger.info("\nAvailable Models:")
     logger.info("  • qwen25-1024d: Instruction-aware embeddings")
     logger.info("  • gemma-768d: Multilingual embeddings")
     logger.info("  • qwen3-rerank: Document reranking")
-    logger.info("  • embeddinggemma-300m: Full-size embeddings")
     logger.info("  • qwen3-embed: Full-size embeddings")
+    logger.info("  • vl-classifier: Visual document complexity classification")
     
     # Start periodic cleanup task
     asyncio.create_task(periodic_cleanup())

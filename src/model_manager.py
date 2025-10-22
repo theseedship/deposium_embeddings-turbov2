@@ -18,6 +18,7 @@ from collections import OrderedDict
 import time
 import subprocess
 import gc
+import os
 
 # Model2Vec imports
 try:
@@ -109,14 +110,14 @@ class ModelManager:
             device=self.device
         )
         
-        # EmbeddingGemma-300M (full-size, low priority)
-        self.configs["embeddinggemma-300m"] = ModelConfig(
-            name="embeddinggemma-300m",
-            type="sentence_transformer",
-            hub_id="google/embeddinggemma-300m",
+        # VL Complexity Classifier (ONNX, CPU-based)
+        self.configs["vl-classifier"] = ModelConfig(
+            name="vl-classifier",
+            type="onnx_classifier",
+            path="src/models/complexity_classifier/model_quantized.onnx",
             priority=1,  # Equal priority for all models
-            estimated_vram_mb=1000,
-            device=self.device
+            estimated_vram_mb=0,  # ONNX runs on CPU
+            device="cpu"
         )
         
         # Qwen3-Embedding-0.6B (embeddings + reranking) - Memory optimized
@@ -180,11 +181,29 @@ class ModelManager:
         
         model = self.models[name]
         
-        # Move to CPU or delete
-        if hasattr(model, 'cpu'):
-            model.cpu()
-        elif hasattr(model, 'to'):
-            model.to('cpu')
+        # Handle different model types for unloading
+        try:
+            from model2vec import StaticModel
+            if isinstance(model, StaticModel):
+                # Model2Vec doesn't have .cpu() method, just delete
+                logger.info(f"Force deleting Model2Vec model: {name}")
+                del model
+            elif hasattr(model, 'cpu'):
+                logger.info(f"Moving {name} to CPU")
+                model.cpu()
+            elif hasattr(model, 'to'):
+                logger.info(f"Moving {name} to CPU via .to()")
+                model.to('cpu')
+            else:
+                # ONNX models or other types - just delete
+                logger.info(f"Force deleting model: {name}")
+                del model
+        except ImportError:
+            # Fallback if Model2Vec not available
+            if hasattr(model, 'cpu'):
+                model.cpu()
+            elif hasattr(model, 'to'):
+                model.to('cpu')
             
         # Remove from cache
         del self.models[name]
@@ -195,6 +214,8 @@ class ModelManager:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            
+        logger.info(f"Successfully unloaded model: {name}")
             
     def _make_room_for_model(self, required_mb: int):
         """
@@ -271,6 +292,22 @@ class ModelManager:
                 else:
                     raise ValueError(f"No valid path for {name}")
                     
+            elif config.type == "onnx_classifier":
+                # Load ONNX classifier model
+                try:
+                    import onnxruntime as ort
+                except ImportError:
+                    raise ImportError("onnxruntime not installed")
+                
+                model_path = Path(config.path)
+                if not model_path.exists():
+                    raise ValueError(f"ONNX model not found at {config.path}")
+                
+                # Create ONNX inference session
+                providers = ['CPUExecutionProvider']  # Force CPU for consistency
+                model = ort.InferenceSession(str(model_path), providers=providers)
+                logger.info(f"✅ {name} loaded (ONNX on CPU)")
+                
             elif config.type == "sentence_transformer":
                 # Load SentenceTransformer model
                 if SentenceTransformer is None:
@@ -387,14 +424,18 @@ class ModelManager:
             except Exception as e:
                 logger.warning(f"Could not preload {name}: {e}")
                 
-    def cleanup_inactive_models(self, timeout_seconds: int = 180):
+    def cleanup_inactive_models(self, timeout_seconds: int = None):
         """
         Unload models that haven't been used for timeout_seconds.
         
         Args:
-            timeout_seconds: Seconds of inactivity before unloading (default 180)
+            timeout_seconds: Seconds of inactivity before unloading (uses AUTO_UNLOAD_MODELS_TIME env var, default 180)
         """
+        if timeout_seconds is None:
+            timeout_seconds = int(os.getenv('AUTO_UNLOAD_MODELS_TIME', '180'))
+        
         current_time = time.time()
+        logger.info(f"Running model cleanup with {timeout_seconds}s timeout (AUTO_UNLOAD_MODELS_TIME={os.getenv('AUTO_UNLOAD_MODELS_TIME', 'default')})")
         models_to_unload = []
         
         # Find inactive models
@@ -405,12 +446,18 @@ class ModelManager:
             if inactive_time > timeout_seconds:
                 models_to_unload.append((name, inactive_time))
         
+        # Log what we found
+        if models_to_unload:
+            logger.info(f"Found {len(models_to_unload)} models to unload: {[name for name, _ in models_to_unload]}")
+        else:
+            logger.debug(f"No models to unload. Currently loaded: {list(self.models.keys())}")
+        
         # Unload inactive models
         for name, inactive_time in models_to_unload:
             logger.info(f"Auto-unloading {name} after {inactive_time:.0f}s of inactivity")
             self._unload_model(name)
         
-        # Log status if any models were unloaded
+        # Log final status
         if models_to_unload:
             used_mb, free_mb = self.get_vram_usage_mb()
             logger.info(f"Cleanup complete. VRAM: {used_mb}MB used, {free_mb}MB free")
