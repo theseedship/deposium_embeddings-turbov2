@@ -41,10 +41,21 @@ async def verify_api_key(request: Request):
     - Authorization: Bearer <token> (Ollama standard - N8N compatible)
     - X-API-Key: <token> (Custom header - backward compatible)
 
+    Special handling:
+    - Railway internal network (*.railway.internal): Authentication bypassed
+    - External requests: API key required
+
     Environment variable: EMBEDDINGS_API_KEY
 
     If EMBEDDINGS_API_KEY is not set, authentication is disabled (dev mode).
     """
+    # Check if request is from Railway internal network
+    host = request.headers.get("host", "")
+    if ".railway.internal" in host:
+        logger.info(f"🔓 Railway internal network request from {host} - authentication bypassed")
+        return "railway-internal"
+
+    # For external requests, check API key configuration
     expected_key = os.getenv("EMBEDDINGS_API_KEY")
 
     # Dev mode: allow if no key configured
@@ -71,14 +82,14 @@ async def verify_api_key(request: Request):
 
     # Validate token
     if not token or token != expected_key:
-        logger.warning(f"Invalid API key attempt (method: {auth_method or 'none'})")
+        logger.warning(f"❌ Invalid API key attempt from {host} (method: {auth_method or 'none'})")
         raise HTTPException(
             status_code=401,
             detail="Invalid or missing API key. Use 'Authorization: Bearer <token>' or 'X-API-Key: <token>' header",
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    logger.debug(f"✅ Authentication successful (method: {auth_method})")
+    logger.info(f"✅ Authentication successful from {host} (method: {auth_method})")
     return token
 
 @app.on_event("startup")
