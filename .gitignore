@@ -46,6 +46,14 @@ Thumbs.db
 # Large model files (downloaded from Hugging Face)
 /models/
 
+# Large test/benchmark files and artifacts
+*.pt
+*.pth
+benchmarks/models/**/best_model.pt
+benchmarks/models/**/*.onnx
+benchmarks/mteb/results/
+benchmarks/mteb/results_baseline/
+
 # Research archives - exclude large model files only
 research-archives/**/*-deposium-*/
 
