@@ -1,9 +1,11 @@
 fastapi==0.115.6
 uvicorn==0.32.1
+python-multipart==0.0.6
 model2vec==0.3.0
 pydantic==2.9.2
 numpy==1.26.4
 safetensors==0.4.5
+Pillow==11.0.0
 
 # EmbeddingGemma dependencies (PyTorch CPU-only for Railway)
 torch==2.6.0

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from pydantic import BaseModel
 from typing import List, Optional
 from model2vec import StaticModel
@@ -8,6 +8,11 @@ from sentence_transformers.util import cos_sim
 from pathlib import Path
 import logging
 import os
+
+# Import classifier module
+from .classifier import get_classifier, ClassifyRequest
+# Import model manager
+from .model_manager import get_model_manager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,101 +25,46 @@ app = FastAPI(
     version="10.0.0"
 )
 
-# Load models at startup
-models = {}
+# Initialize model manager
+model_manager = None
 
 @app.on_event("startup")
-async def load_models():
-    global models
+async def initialize_models():
+    global model_manager
 
-    # Load Qwen25-1024D Model2Vec (PRIMARY MODEL - NEW CHAMPION! 🏆)
+    # Initialize model manager with lazy loading
     logger.info("=" * 80)
-    logger.info("🔥 Loading Qwen25-1024D Model2Vec (PRIMARY - INSTRUCTION-AWARE)")
+    logger.info("🚀 Initializing Model Manager with Dynamic VRAM Management")
     logger.info("=" * 80)
-    logger.info("  Overall Quality: 0.841 (+52% vs Gemma-768D)")
-    logger.info("  Instruction-Aware: 0.953 (UNIQUE capability)")
-    logger.info("  Semantic: 0.950 | Code: 0.864 | Conversational: 0.846")
-    logger.info("  Size: 65MB (6x smaller than Gemma-768D)")
-    logger.info("  Speed: 500-1000x faster than full LLM")
-
-    # Try loading from local_models (in Docker image) first, then from Hugging Face
-    # Note: /app/models is Railway volume (HuggingFace cache), /app/local_models is in image
-    qwen25_local = Path("/app/local_models/qwen25-deposium-1024d")
-    qwen25_fallback = Path("models/qwen25-deposium-1024d")  # For local dev
-
-    if qwen25_local.exists():
-        logger.info("Loading Qwen25-1024D from Docker image (/app/local_models)...")
-        models["qwen25-1024d"] = StaticModel.from_pretrained(str(qwen25_local))
-        logger.info("✅ Qwen25-1024D Model2Vec loaded from image! (1024D, instruction-aware)")
-    elif qwen25_fallback.exists():
-        logger.info("Loading Qwen25-1024D from local dev path...")
-        models["qwen25-1024d"] = StaticModel.from_pretrained(str(qwen25_fallback))
-        logger.info("✅ Qwen25-1024D Model2Vec loaded from local dev! (1024D, instruction-aware)")
-    else:
-        logger.info("Local model not found, downloading from Hugging Face...")
-        try:
-            models["qwen25-1024d"] = StaticModel.from_pretrained("tss-deposium/qwen25-deposium-1024d")
-            logger.info("✅ Qwen25-1024D Model2Vec downloaded from HF! (1024D, instruction-aware)")
-        except Exception as e:
-            logger.error(f"❌ Failed to load Qwen25-1024D: {e}")
-            raise RuntimeError("Primary model Qwen25-1024D not found!")
-
-    # Load Gemma-768D Model2Vec (SECONDARY - still available)
-    logger.info("\nLoading Gemma-768D Model2Vec (SECONDARY)...")
-    logger.info("  Quality: 0.551 | Multilingual: 0.737")
-
-    gemma_768d_local = Path("/app/local_models/gemma-deposium-768d")
-    gemma_768d_fallback = Path("models/gemma-deposium-768d")  # For local dev
-
-    if gemma_768d_local.exists():
-        logger.info("Loading Gemma-768D from Docker image (/app/local_models)...")
-        models["gemma-768d"] = StaticModel.from_pretrained(str(gemma_768d_local))
-        logger.info("✅ Gemma-768D Model2Vec loaded from image! (768D, 500-700x faster)")
-    elif gemma_768d_fallback.exists():
-        logger.info("Loading Gemma-768D from local dev path...")
-        models["gemma-768d"] = StaticModel.from_pretrained(str(gemma_768d_fallback))
-        logger.info("✅ Gemma-768D Model2Vec loaded from local dev! (768D, 500-700x faster)")
-    else:
-        logger.info("Local model not found, downloading from Hugging Face...")
-        try:
-            models["gemma-768d"] = StaticModel.from_pretrained("tss-deposium/gemma-deposium-768d")
-            logger.info("✅ Gemma-768D Model2Vec downloaded from HF! (768D, 500-700x faster)")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not load Gemma-768D: {e}")
-
-    # Load full-size embedding models (for comparison with distilled versions)
+    
+    model_manager = get_model_manager()
+    
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Device: {device}")
-
-    # Load EmbeddingGemma-300M (full-size Gemma embeddings)
-    logger.info("Loading EmbeddingGemma-300M (full-size embeddings)...")
-    try:
-        models["embeddinggemma-300m"] = SentenceTransformer(
-            "google/embeddinggemma-300m",
-            trust_remote_code=True,
-            device=device
-        )
-        logger.info("✅ EmbeddingGemma-300M loaded! (300M params, 768D)")
-    except Exception as e:
-        logger.warning(f"⚠️ Could not load EmbeddingGemma-300M: {e}")
-
-    # Load Qwen3-Embedding-0.6B (for both embeddings AND reranking)
-    logger.info("Loading Qwen3-Embedding-0.6B (embeddings + reranking)...")
-    try:
-        models["qwen3-embed"] = SentenceTransformer(
-            "Qwen/Qwen3-Embedding-0.6B",
-            trust_remote_code=True,
-            device=device
-        )
-        logger.info("✅ Qwen3-Embedding-0.6B loaded! (600M params, 1024D, MTEB: 64.33)")
-
-        # Also use for reranking (FP32 = best speed + precision on Railway vCPU!)
-        models["qwen3-rerank"] = models["qwen3-embed"]
-        logger.info("✅ Qwen3 also configured for reranking (242ms, best precision!)")
-    except Exception as e:
-        logger.warning(f"⚠️ Could not load Qwen3-Embedding: {e}")
-
-    logger.info("🚀 All models ready!")
+    
+    if device == "cuda":
+        used_mb, free_mb = model_manager.get_vram_usage_mb()
+        total_mb = used_mb + free_mb
+        logger.info(f"GPU Memory: {used_mb}MB used, {free_mb}MB free (Total: {total_mb}MB)")
+        logger.info(f"VRAM Limit: {model_manager.max_vram_mb}MB (keeps 1GB margin)")
+    
+    logger.info("\nModel Loading Strategy:")
+    logger.info("  • Lazy loading: Models loaded only when needed")
+    logger.info("  • Priority system: High-priority models stay in VRAM")
+    logger.info("  • Auto-unloading: Frees VRAM when limit exceeded")
+    
+    logger.info("\nAvailable Models:")
+    logger.info("  • qwen25-1024d: Instruction-aware embeddings (priority: 10)")
+    logger.info("  • gemma-768d: Multilingual embeddings (priority: 5)")
+    logger.info("  • qwen3-rerank: Document reranking (priority: 8)")
+    logger.info("  • embeddinggemma-300m: Full-size embeddings (priority: 2)")
+    logger.info("  • qwen3-embed: Full-size embeddings (priority: 7)")
+    
+    # Optionally preload high-priority models
+    # Disabled by default to minimize startup VRAM usage
+    # model_manager.preload_priority_models()
+    
+    logger.info("✅ Model Manager initialized! Models will load on first use.")
 
 # Request/Response models
 class EmbedRequest(BaseModel):
@@ -204,12 +154,25 @@ async def root():
 
 @app.get("/health")
 async def health():
-    if not models or len(models) == 0:
-        raise HTTPException(status_code=503, detail="Models not loaded")
+    global model_manager
+    if not model_manager:
+        raise HTTPException(status_code=503, detail="Model manager not initialized")
+    
+    status = model_manager.get_status()
     return {
         "status": "healthy",
-        "models_loaded": list(models.keys())
+        "models_loaded": list(status.get("loaded_models", {})),
+        "vram_used_mb": status.get("vram_used_mb", 0),
+        "vram_free_mb": status.get("vram_free_mb", 0)
     }
+
+@app.get("/api/status")
+async def get_status():
+    """Get detailed model manager status"""
+    global model_manager
+    if not model_manager:
+        return {"error": "Model manager not initialized"}
+    return model_manager.get_status()
 
 @app.get("/api/tags")
 async def list_models():
@@ -257,19 +220,22 @@ async def list_models():
 @app.post("/api/embed")
 async def create_embedding(request: EmbedRequest):
     """Ollama-compatible embedding endpoint with multi-model support"""
+    global model_manager
+    
     # Validate model selection
-    if request.model not in models:
+    available_models = model_manager.configs.keys()
+    if request.model not in available_models:
         raise HTTPException(
             status_code=400,
-            detail=f"Model '{request.model}' not found. Available: {list(models.keys())}"
+            detail=f"Model '{request.model}' not found. Available: {list(available_models)}"
         )
 
     try:
         # Handle both string and list inputs
         texts = [request.input] if isinstance(request.input, str) else request.input
 
-        # Select the appropriate model
-        selected_model = models[request.model]
+        # Get model (lazy loading)
+        selected_model = model_manager.get_model(request.model)
 
         # Generate embeddings (Model2Vec or SentenceTransformer)
         embeddings = selected_model.encode(texts, show_progress_bar=False)
@@ -303,18 +269,22 @@ async def rerank_documents(request: RerankRequest):
 
     Returns documents sorted by relevance score (highest first)
     """
+    global model_manager
+    
     # Validate model selection
-    if request.model not in models:
+    available_models = model_manager.configs.keys()
+    if request.model not in available_models:
         raise HTTPException(
             status_code=400,
-            detail=f"Model '{request.model}' not found. Available: {list(models.keys())}"
+            detail=f"Model '{request.model}' not found. Available: {list(available_models)}"
         )
 
     if not request.documents:
         raise HTTPException(status_code=400, detail="No documents provided")
 
     try:
-        selected_model = models[request.model]
+        # Get model (lazy loading)
+        selected_model = model_manager.get_model(request.model)
 
         # For SentenceTransformer models (qwen3-rerank, embeddinggemma-300m, qwen3-embed)
         if isinstance(selected_model, SentenceTransformer):
@@ -362,4 +332,63 @@ async def rerank_documents(request: RerankRequest):
 
     except Exception as e:
         logger.error(f"Reranking error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/classify")
+async def classify_document(
+    request: ClassifyRequest = None,
+    file: UploadFile = File(None)
+):
+    """
+    Classify document complexity for intelligent routing.
+
+    Supports two input methods:
+    1. JSON with base64 image: {"image": "data:image/jpeg;base64,..."}
+    2. Multipart file upload: file=@document.jpg
+
+    Returns:
+    - class_name: "LOW" (simple OCR) or "HIGH" (VLM reasoning)
+    - confidence: 0.0-1.0
+    - probabilities: {"LOW": float, "HIGH": float}
+    - routing_decision: str (routing recommendation)
+    - latency_ms: float
+
+    Use case: Route LOW complexity to OCR (~100ms), HIGH to VLM (~2000ms)
+    """
+    try:
+        # Get classifier (lazy loading)
+        classifier = get_classifier()
+
+        # Validate input
+        if request is None and file is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Either 'image' in JSON body or 'file' in multipart required"
+            )
+
+        # Route to appropriate prediction method
+        if file is not None:
+            # File upload (multipart/form-data)
+            if not file.content_type.startswith('image/'):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid file type: {file.content_type}. Expected image/*"
+                )
+            result = await classifier.predict_from_file(file)
+        elif request is not None and request.image is not None:
+            # Base64 image (JSON)
+            result = await classifier.predict_from_base64(request.image)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="No image provided. Send 'image' (base64) in JSON or 'file' in multipart"
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Classification error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -35,7 +35,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY src/ ./src/
 
-# Note: Models will be downloaded from Hugging Face at startup:
+# Note: Complexity classifier model is included in the Docker image:
+# - ResNet18 ONNX INT8 quantized model (11MB) at src/models/complexity_classifier/model_quantized.onnx
+# - Binary classification: LOW (simple docs → OCR) vs HIGH (complex docs → VLM)
+# - Performance: 93% accuracy, 100% HIGH recall, ~10ms latency
+
+# Note: Embedding models will be downloaded from Hugging Face at startup:
 # - Qwen25-1024D Model2Vec (PRIMARY) ~65MB - from tss-deposium/qwen25-deposium-1024d
 # - Gemma-768D Model2Vec (SECONDARY) ~400MB - from tss-deposium/gemma-deposium-768d
 # - EmbeddingGemma-300M (optional, full-size) ~300MB

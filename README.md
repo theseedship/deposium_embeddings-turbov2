@@ -11,6 +11,7 @@ Ultra-fast embeddings service with **instruction-awareness** + full-size models 
 - 🎯 **EmbeddingGemma-300M** - Full-size embeddings (300M params)
 - 🚀 **Qwen3-Embedding-0.6B** - Full-size embeddings (600M params, MTEB: 64.33)
 - 🏆 **Qwen3 Reranking** - Optimized FP32 reranking (242ms)
+- 📄 **Document Complexity Classifier** - Binary routing (LOW→OCR, HIGH→VLM)
 - **500-1000x faster** than full LLMs
 - **Ollama-compatible API** - drop-in replacement
 - **FastAPI** backend with health checks
@@ -70,6 +71,15 @@ curl -X POST http://localhost:11435/api/embed \
 curl -X POST http://localhost:11435/api/rerank \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen3-rerank","query":"machine learning","documents":["AI and ML","cooking recipes","deep learning"]}'
+
+# Document complexity classification (file upload)
+curl -X POST http://localhost:11435/api/classify \
+  -F "file=@document.jpg"
+
+# Document complexity classification (base64 JSON)
+curl -X POST http://localhost:11435/api/classify \
+  -H "Content-Type: application/json" \
+  -d '{"image":"data:image/jpeg;base64,/9j/4AAQSkZJRg..."}'
 ```
 
 ## 🔌 API Endpoints
@@ -110,6 +120,45 @@ Generate embeddings with model selection
 }
 ```
 
+### `POST /api/classify`
+Classify document complexity for intelligent routing
+
+**Method 1: File Upload**
+```bash
+curl -X POST http://localhost:11435/api/classify \
+  -F "file=@document.jpg"
+```
+
+**Method 2: Base64 JSON**
+```json
+{
+  "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+}
+```
+
+**Response:**
+```json
+{
+  "class_name": "HIGH",
+  "class_id": 1,
+  "confidence": 0.982,
+  "probabilities": {
+    "LOW": 0.018,
+    "HIGH": 0.982
+  },
+  "routing_decision": "Complex document - Route to VLM reasoning pipeline (~2000ms)",
+  "latency_ms": 9.4
+}
+```
+
+**Classification:**
+- `LOW` - Simple documents (plain text, simple forms) → Route to OCR (~100ms)
+- `HIGH` - Complex documents (charts, diagrams, tables) → Route to VLM reasoning (~2000ms)
+
+**Model:** ResNet18 ONNX INT8 quantized (11MB)
+**Performance:** 93% accuracy, 100% HIGH recall, ~10ms latency
+**Lazy loading:** Model loads only on first request to save RAM
+
 ## 🔧 Integration with N8N
 
 ### Qwen25-1024D (PRIMARY - Instruction-Aware)
@@ -123,6 +172,23 @@ Configure N8N Ollama credentials:
 - **Base URL:** `http://deposium-embeddings-turbov2:11435`
 - **Model Name:** `gemma-768d`
 - **Use case:** Multilingual search, cross-language retrieval
+
+### Document Complexity Classifier
+Configure N8N HTTP Request node:
+- **Method:** POST
+- **URL:** `http://deposium-embeddings-turbov2:11435/api/classify`
+- **Send Binary Data:** Enabled
+- **Use case:** Intelligent routing - LOW complexity to OCR, HIGH complexity to VLM
+
+**Workflow Example:**
+```
+1. [Trigger] Webhook receives document
+2. [HTTP Request] POST to /api/classify
+3. [Switch] Route based on class_name
+   ├─ LOW → [Stirling PDF] Simple OCR (~100ms)
+   └─ HIGH → [LLM Node] VLM reasoning (~2000ms)
+4. [Return] Send response
+```
 
 ## 📈 Performance
 
