@@ -62,3 +62,7 @@ venv_*/
 
 
 venv_*/
+
+# Allow VL distilled ResNet18 model for deployment
+!models/vl_distilled_resnet18/
+!models/vl_distilled_resnet18/model_quantized.onnx
