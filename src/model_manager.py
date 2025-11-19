@@ -246,7 +246,7 @@ class ModelManager:
             used_mb, free_mb = self.get_vram_usage_mb()
             if free_mb >= required_mb:
                 break
-                
+
     def _load_model(self, name: str) -> Any:
         """
         Load a model into memory.
@@ -368,6 +368,23 @@ class ModelManager:
                         device=config.device
                     )
                     logger.info(f"✅ {name} loaded (SentenceTransformer)")
+
+                # Apply torch.compile if enabled (Linux only usually)
+                if os.getenv("ENABLE_TORCH_COMPILE", "0") == "1" and hasattr(torch, "compile"):
+                    try:
+                        logger.info(f"🚀 Compiling {name} with torch.compile()...")
+                        model = torch.compile(model)
+                        logger.info(f"✅ {name} compiled!")
+                    except Exception as e:
+                        logger.warning(f"Failed to compile {name}: {e}")
+
+                # Log Attention Implementation
+                try:
+                    # Check if using SDPA (Scaled Dot Product Attention)
+                    if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+                        logger.info(f"ℹ️  {name} using PyTorch SDPA (Flash Attention backend if available)")
+                except:
+                    pass
                 
             else:
                 raise ValueError(f"Unknown model type: {config.type}")

@@ -28,3 +28,6 @@ onnxruntime==1.23.2  # Requires numpy<2.0 (incompatible with NumPy 2.x)
 
 # MTEB for model evaluation (optional, dev only)
 # mteb==1.18.0
+
+# Optimization
+flash_attn>=2.0.0  # Faster attention implementation for Transformer models

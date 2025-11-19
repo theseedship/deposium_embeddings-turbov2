@@ -127,6 +127,22 @@ async def initialize_models():
     # Disabled by default to minimize startup VRAM usage
     # model_manager.preload_priority_models()
     
+    # Start background cleanup task
+    import asyncio
+    async def model_cleanup_loop():
+        """Background task to cleanup inactive models."""
+        logger.info("🧹 Starting model cleanup background task")
+        while True:
+            try:
+                await asyncio.sleep(60)  # Check every minute
+                if model_manager:
+                    model_manager.cleanup_inactive_models()
+            except Exception as e:
+                logger.error(f"Error in model cleanup loop: {e}")
+                await asyncio.sleep(60)  # Wait before retrying
+
+    asyncio.create_task(model_cleanup_loop())
+    
     logger.info("✅ Model Manager initialized! Models will load on first use.")
 
 # Request/Response models
