@@ -32,6 +32,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install flash-attn separately (requires torch to be installed first)
+RUN pip install --no-cache-dir flash-attn>=2.0.0
+
 # Copy application
 COPY src/ ./src/
 
