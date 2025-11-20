@@ -19,6 +19,7 @@ import time
 import subprocess
 import gc
 import os
+import sys
 
 # Model2Vec imports
 try:
@@ -209,6 +210,21 @@ class ModelManager:
         del self.models[name]
         if name in self.vram_usage:
             del self.vram_usage[name]
+
+        # Log reference count (debug)
+        ref_count = sys.getrefcount(model)
+        logger.info(f"Model {name} refcount before deletion: {ref_count} (should be low)")
+        
+        # Clear torch compiler caches if applicable
+        if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
+            try:
+                logger.info("Resetting torch._dynamo to clear compiler caches")
+                torch._dynamo.reset()
+            except Exception as e:
+                logger.warning(f"Failed to reset torch._dynamo: {e}")
+
+        # Delete model reference
+        del model
             
         # Force garbage collection
         gc.collect()
