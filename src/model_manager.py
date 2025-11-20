@@ -215,6 +215,17 @@ class ModelManager:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
+        # Force release of system memory back to OS (Linux only)
+        try:
+            import ctypes
+            import platform
+            if platform.system() == "Linux":
+                libc = ctypes.CDLL("libc.so.6")
+                libc.malloc_trim(0)
+                logger.info("Called malloc_trim to release system memory")
+        except Exception as e:
+            logger.warning(f"Failed to call malloc_trim: {e}")
+            
         logger.info(f"Successfully unloaded model: {name}")
             
     def _make_room_for_model(self, required_mb: int):
