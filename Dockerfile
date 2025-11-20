@@ -1,12 +1,10 @@
 FROM python:3.11-slim
 
-# Install system dependencies for optimization
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    libjemalloc2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Performance optimization environment variables
-ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 # PyTorch Threading Optimization
 ENV OMP_NUM_THREADS=4 \
