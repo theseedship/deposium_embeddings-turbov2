@@ -201,21 +201,6 @@ class ModelManager:
                 del model
         except ImportError:
             # Fallback if Model2Vec not available
-            if hasattr(model, 'cpu'):
-                model.cpu()
-            elif hasattr(model, 'to'):
-                model.to('cpu')
-            
-        # Remove from cache
-        del self.models[name]
-        if name in self.vram_usage:
-            del self.vram_usage[name]
-
-        # Log reference count (debug)
-        ref_count = sys.getrefcount(model)
-        logger.info(f"Model {name} refcount before deletion: {ref_count} (should be low)")
-        
-        if ref_count > 2:
             logger.warning(f"⚠️ High refcount detected for {name}!")
             referrers = gc.get_referrers(model)
             for i, ref in enumerate(referrers):
