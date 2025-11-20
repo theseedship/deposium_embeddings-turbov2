@@ -215,6 +215,21 @@ class ModelManager:
         ref_count = sys.getrefcount(model)
         logger.info(f"Model {name} refcount before deletion: {ref_count} (should be low)")
         
+        if ref_count > 2:
+            logger.warning(f"⚠️ High refcount detected for {name}!")
+            referrers = gc.get_referrers(model)
+            for i, ref in enumerate(referrers):
+                if ref is locals():
+                    continue # Ignore local scope
+                logger.warning(f"  Ref {i}: {type(ref)}")
+                # Don't log full content of large objects, just type/str
+                try:
+                    s = str(ref)
+                    if len(s) > 200: s = s[:200] + "..."
+                    logger.warning(f"    Value: {s}")
+                except:
+                    pass
+        
         # Clear torch compiler caches if applicable
         if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
             try:
