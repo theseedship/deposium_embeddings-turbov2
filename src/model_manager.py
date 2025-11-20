@@ -188,7 +188,7 @@ class ModelManager:
             if isinstance(model, StaticModel):
                 # Model2Vec doesn't have .cpu() method, just delete
                 logger.info(f"Force deleting Model2Vec model: {name}")
-                del model
+                # model will be deleted at the end
             elif hasattr(model, 'cpu'):
                 logger.info(f"Moving {name} to CPU")
                 model.cpu()
@@ -198,22 +198,52 @@ class ModelManager:
             else:
                 # ONNX models or other types - just delete
                 logger.info(f"Force deleting model: {name}")
-                del model
+                # model will be deleted at the end
         except ImportError:
             # Fallback if Model2Vec not available
-            logger.warning(f"⚠️ High refcount detected for {name}!")
-            referrers = gc.get_referrers(model)
-            for i, ref in enumerate(referrers):
-                if ref is locals():
-                    continue # Ignore local scope
-                logger.warning(f"  Ref {i}: {type(ref)}")
-                # Don't log full content of large objects, just type/str
-                try:
-                    s = str(ref)
-                    if len(s) > 200: s = s[:200] + "..."
-                    logger.warning(f"    Value: {s}")
-                except:
-                    pass
+            if hasattr(model, 'cpu'):
+                model.cpu()
+            elif hasattr(model, 'to'):
+                model.to('cpu')
+        except Exception as e:
+            logger.warning(f"Error during model unload (non-fatal): {e}")
+
+        # Remove from cache
+        del self.models[name]
+        if name in self.vram_usage:
+            del self.vram_usage[name]
+
+        # CRITICAL FIX: Break circular references for SentenceTransformer
+        # The logs showed SentenceTransformerModelCardData holding a reference
+        if hasattr(model, "model_card_data"):
+            logger.info(f"Breaking model_card_data reference for {name}")
+            model.model_card_data = None
+            
+        # Clear other potential circular references
+        if hasattr(model, "_modules"):
+            model._modules.clear()
+
+        # Log reference count (debug)
+        try:
+            ref_count = sys.getrefcount(model)
+            logger.info(f"Model {name} refcount before deletion: {ref_count} (should be low)")
+            
+            if ref_count > 2:
+                logger.warning(f"⚠️ High refcount detected for {name}!")
+                referrers = gc.get_referrers(model)
+                for i, ref in enumerate(referrers):
+                    if ref is locals():
+                        continue # Ignore local scope
+                    logger.warning(f"  Ref {i}: {type(ref)}")
+                    # Don't log full content of large objects, just type/str
+                    try:
+                        s = str(ref)
+                        if len(s) > 200: s = s[:200] + "..."
+                        logger.warning(f"    Value: {s}")
+                    except:
+                        pass
+        except Exception as e:
+            logger.warning(f"Error checking refcount: {e}")
         
         # Clear torch compiler caches if applicable
         if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
