@@ -452,12 +452,33 @@ class ModelManager:
             timeout_seconds = int(os.getenv('AUTO_UNLOAD_MODELS_TIME', '180'))
         
         current_time = time.time()
-        logger.info(f"Running model cleanup with {timeout_seconds}s timeout (AUTO_UNLOAD_MODELS_TIME={os.getenv('AUTO_UNLOAD_MODELS_TIME', 'default')})")
-        models_to_unload = []
+        logger.info(f"Checking for inactive models... (Timeout: {timeout_seconds}s)")
         
+        # Log status of all models
+        for name in list(self.models.keys()):
+            last = self.last_used.get(name, 0)
+            inactive = current_time - last
+            logger.info(f"  - {name}: inactive for {inactive:.1f}s (Threshold: {timeout_seconds}s)")
+
+        models_to_unload = []
         # Find inactive models
         for name in list(self.models.keys()):
             last_used = self.last_used.get(name, 0)
+            inactive_time = current_time - last_used
+            
+            if inactive_time > timeout_seconds:
+                models_to_unload.append((name, inactive_time))
+        
+        # Log what we found
+        if models_to_unload:
+            logger.info(f"Found {len(models_to_unload)} models to unload: {[name for name, _ in models_to_unload]}")
+        else:
+            logger.info(f"No models to unload. Currently loaded: {list(self.models.keys())}")
+        
+        # Unload inactive models
+        for name, inactive_time in models_to_unload:
+            logger.info(f"Auto-unloading {name} after {inactive_time:.0f}s of inactivity")
+            self._unload_model(name)
         
         # Log final status
         if models_to_unload:
