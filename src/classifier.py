@@ -37,49 +37,17 @@ class ComplexityClassifier:
     Loads ONNX model only on first prediction to save memory.
     """
 
-    def __init__(self, model_path: str = "src/models/complexity_classifier/model_quantized.onnx"):
+    def __init__(self):
         """
-        Initialize classifier (lazy loading).
-
-        Args:
-            model_path: Path to ONNX quantized model
+        Initialize classifier.
         """
-        self.model_path = Path(model_path)
-        self.session = None
         self.class_names = ["LOW", "HIGH"]
 
         # Image preprocessing parameters (ImageNet normalization)
         self.mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         self.std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-        logger.info(f"Complexity classifier initialized (lazy loading from {model_path})")
-
-    def _load_model(self):
-        """Load ONNX model (called on first prediction)."""
-        if self.session is not None:
-            return  # Already loaded
-
-        import onnxruntime as ort
-
-        logger.info("=" * 80)
-        logger.info("🎯 Loading Complexity Classifier (ONNX INT8)")
-        logger.info("=" * 80)
-        logger.info(f"  Model: {self.model_path}")
-        logger.info(f"  Size: {self.model_path.stat().st_size / 1024 / 1024:.1f} MB")
-        logger.info("  Accuracy: 100% overall, 100% HIGH recall (distilled from CLIP)")
-        logger.info("  Latency: ~10ms on CPU")
-
-        if not self.model_path.exists():
-            raise FileNotFoundError(f"Model not found: {self.model_path}")
-
-        # Load ONNX session (CPU optimized)
-        self.session = ort.InferenceSession(
-            str(self.model_path),
-            providers=['CPUExecutionProvider']
-        )
-
-        logger.info("✅ Complexity classifier loaded!")
-        logger.info("=" * 80)
+        logger.info("Complexity classifier initialized (delegating to ModelManager)")
 
     def _preprocess_image(self, image: Image.Image) -> np.ndarray:
         """
@@ -188,9 +156,9 @@ class ComplexityClassifier:
                 'latency_ms': float
             }
         """
-        # Lazy load model on first prediction
-        if self.session is None:
-            self._load_model()
+        # Get model from manager (handles lazy loading and unloading)
+        from src.model_manager import get_model_manager
+        session = get_model_manager().get_model("vl-classifier")
 
         start_time = time.perf_counter()
 
@@ -198,7 +166,7 @@ class ComplexityClassifier:
         img_array = self._preprocess_image(image)
 
         # Run ONNX inference
-        outputs = self.session.run(None, {'input': img_array})[0]
+        outputs = session.run(None, {'input': img_array})[0]
 
         # Softmax to get probabilities
         exp_outputs = np.exp(outputs[0] - np.max(outputs[0]))
