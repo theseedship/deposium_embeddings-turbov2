@@ -252,12 +252,29 @@ class ModelManager:
                 torch._dynamo.reset()
             except Exception as e:
                 logger.warning(f"Failed to reset torch._dynamo: {e}")
+        
+        # Aggressive cleanup for SentenceTransformer
+        if hasattr(model, "_modules"):
+            try:
+                for name, module in model._modules.items():
+                    # Move to CPU to be sure
+                    if hasattr(module, "cpu"):
+                        module.cpu()
+                    # Explicitly delete large attributes if possible
+                    if hasattr(module, "auto_model"):
+                        logger.info(f"Deleting auto_model from module {name}")
+                        del module.auto_model
+                model._modules.clear()
+            except Exception as e:
+                logger.warning(f"Error during aggressive module cleanup: {e}")
 
         # Delete model reference
         del model
             
-        # Force garbage collection
+        # Force garbage collection multiple times
         gc.collect()
+        gc.collect()
+        
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
