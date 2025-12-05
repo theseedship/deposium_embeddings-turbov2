@@ -15,11 +15,19 @@ ENV OMP_NUM_THREADS=4 \
 
 # ONNX Runtime Optimization
 ENV ORT_NUM_THREADS=4 \
-    ORT_ENABLE_CPU_FP16_OPS=1
+    ORT_ENABLE_CPU_FP16_OPS=1 \
+    ORT_OPTIMIZATION_LEVEL=3
+
+# PyTorch JIT
+ENV PYTORCH_JIT=1
 
 # Python Optimization
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
+
+# Model Configuration (defaults - can be overridden at runtime)
+ENV DEFAULT_EMBEDDING_MODEL=m2v-bge-m3-1024d \
+    DEFAULT_RERANK_MODEL=qwen3-rerank
 
 # Model Cache (uses Railway volume at /app/models)
 # Note: Using only HF_HOME (TRANSFORMERS_CACHE is deprecated in transformers v5)
@@ -39,11 +47,11 @@ COPY src/ ./src/
 # - Performance: 93% accuracy, 100% HIGH recall, ~10ms latency
 
 # Note: Embedding models will be downloaded from Hugging Face at startup:
-# - Qwen25-1024D Model2Vec (PRIMARY) ~65MB - from tss-deposium/qwen25-deposium-1024d
-# - Gemma-768D Model2Vec (SECONDARY) ~400MB - from tss-deposium/gemma-deposium-768d
-# - EmbeddingGemma-300M (optional, full-size) ~300MB
-# - Qwen3-Embedding-0.6B (optional, full-size) ~600MB
-# Total first download: ~465MB (cached on Railway volume between deployments)
+# - M2V-BGE-M3-1024D (PRIMARY) ~21MB - tss-deposium/m2v-bge-m3-1024d
+# - BGE-M3-ONNX INT8 (CPU) ~150MB - gpahal/bge-m3-onnx-int8
+# - Gemma-768D (LEGACY) ~400MB - tss-deposium/gemma-deposium-768d
+# - Qwen3-Embedding-0.6B (RERANK) ~600MB - Qwen/Qwen3-Embedding-0.6B
+# Total first download: ~170MB (cached on Railway volume between deployments)
 
 # Create cache directory for models (Railway volume will override)
 RUN mkdir -p /app/models/transformers
