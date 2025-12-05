@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Deposium Embeddings - Qwen25 Instruction-Aware + Full-Size Models",
-    description="🔥 NEW: Qwen25-1024D Instruction-Aware (65MB, quality: 0.84) + Gemma-768D Model2Vec + Full-size models (EmbeddingGemma-300M, Qwen3-0.6B) + FP32 Reranking",
-    version="10.0.0"
+    title="Deposium Embeddings - M2V-BGE-M3 + BGE-M3 ONNX",
+    description="🔥 M2V-BGE-M3-1024D (distilled from BGE-M3, ~3x more energy efficient) + BGE-M3-ONNX INT8 (CPU high quality) + Qwen3 Reranking + VL Classifier",
+    version="11.0.0"
 )
 
 # Initialize model manager
@@ -118,8 +118,9 @@ async def initialize_models():
     logger.info("  • Auto-unloading: Frees VRAM when limit exceeded")
     
     logger.info("\nAvailable Models:")
-    logger.info("  • qwen25-1024d: Instruction-aware embeddings (priority: 10)")
-    logger.info("  • gemma-768d: Multilingual embeddings (priority: 5)")
+    logger.info("  • m2v-bge-m3-1024d: Distilled BGE-M3 embeddings (priority: 10) - 3x more energy efficient")
+    logger.info("  • bge-m3-onnx: BGE-M3 ONNX INT8 for CPU (priority: 8) - high quality")
+    logger.info("  • gemma-768d: Legacy multilingual embeddings (priority: 5)")
     logger.info("  • qwen3-rerank: Document reranking (priority: 8)")
     logger.info("  • vl-classifier: Document complexity classifier (ONNX, standalone)")
     
@@ -147,7 +148,7 @@ async def initialize_models():
 
 # Request/Response models
 class EmbedRequest(BaseModel):
-    model: str = "qwen25-1024d"  # Changed to qwen25-1024d as primary
+    model: str = "m2v-bge-m3-1024d"  # Distilled BGE-M3, 3x more energy efficient
     input: str | List[str]
 
 class EmbedResponse(BaseModel):
@@ -167,43 +168,49 @@ class RerankResponse(BaseModel):
 @app.get("/")
 async def root():
     model_info = {
-        "qwen25-1024d": "🔥 Qwen25-1024D (PRIMARY) - Instruction-Aware! Quality: 0.841 | Instruction: 0.953 | 65MB",
-        "gemma-768d": "⚡ Gemma-768D Model2Vec (SECONDARY) - 500-700x faster! Quality: 0.551 | Multilingual: 0.737",
+        "m2v-bge-m3-1024d": "🔥 M2V-BGE-M3 (PRIMARY) - Distilled from BGE-M3! 3x more energy efficient | MTEB: 0.47 | 1024D",
+        "bge-m3-onnx": "⚡ BGE-M3 ONNX INT8 (CPU) - High quality embeddings | MTEB: ~0.60 | 1024D",
+        "gemma-768d": "📚 Gemma-768D Model2Vec (LEGACY) - Multilingual | MTEB: 0.55",
         "qwen3-rerank": "🏆 Qwen3 FP32 Reranking - FASTEST + BEST PRECISION (242ms for 3 docs!)",
         "vl-classifier": "🎯 Document Complexity Classifier - ResNet18 ONNX INT8 (93% accuracy, ~10ms)",
     }
 
     return {
-        "service": "Deposium Embeddings - Qwen25 + Gemma + Rerank + Classifier",
+        "service": "Deposium Embeddings - M2V-BGE-M3 + ONNX + Rerank + Classifier",
         "status": "running",
-        "version": "10.1.0",
+        "version": "11.0.0",
         "models": model_info,
-        "recommended": "qwen25-1024d for embeddings, qwen3-rerank for reranking, vl-classifier for routing",
+        "recommended": "m2v-bge-m3-1024d for fast embeddings, bge-m3-onnx for quality, qwen3-rerank for reranking",
         "quality_metrics": {
-            "qwen25-1024d": {
-                "overall": 0.841,
-                "instruction_awareness": 0.953,
-                "semantic_similarity": 0.950,
-                "code_understanding": 0.864,
-                "conversational": 0.846,
-                "multilingual": 0.434,
+            "m2v-bge-m3-1024d": {
+                "overall_mteb": 0.47,
+                "sts": 0.58,
+                "classification": 0.66,
+                "clustering": 0.28,
                 "dimensions": 1024,
-                "size_mb": 65,
-                "params": "1.54B distilled",
-                "speed": "500-1000x faster than full LLM",
-                "unique_capability": "Instruction-aware embeddings (ONLY model with this)",
-                "use_case": "Primary model - instruction-aware RAG, Q&A, code search"
+                "size_mb": 21,
+                "params": "1.54B distilled to 21MB",
+                "energy_efficiency": "3x more efficient than SentenceTransformers",
+                "throughput": "14,171 texts/s (vs 2,587 for MiniLM)",
+                "texts_per_wh": 3191024,
+                "use_case": "Primary model - fast RAG, bulk processing, energy-efficient deployments"
+            },
+            "bge-m3-onnx": {
+                "overall_mteb": 0.60,
+                "dimensions": 1024,
+                "size_mb": 150,
+                "quantization": "INT8 ONNX",
+                "device": "CPU optimized",
+                "use_case": "High quality CPU embeddings when GPU not available"
             },
             "gemma-768d": {
-                "overall": 0.551,
-                "semantic_similarity": 0.591,
-                "multilingual": 0.737,
-                "conversational": 0.159,
+                "overall_mteb": 0.55,
+                "semantic_similarity": 0.59,
+                "multilingual": 0.74,
                 "dimensions": 768,
                 "size_mb": 400,
                 "params": "~50M",
-                "speed": "500-700x faster than full Gemma",
-                "use_case": "Secondary - multilingual support"
+                "use_case": "Legacy - multilingual support"
             },
             "qwen3-rerank": {
                 "mteb_score": 64.33,
@@ -225,7 +232,13 @@ async def root():
                 "use_case": "Document routing - simple (OCR) vs complex (VLM)"
             }
         },
-        "optimization_note": "FP32 models benefit massively from environment optimizations (OMP_NUM_THREADS, jemalloc, KMP_AFFINITY)"
+        "energy_benchmark": {
+            "note": "Custom benchmark using CodeCarbon (Model2Vec not compatible with AIEnergyScore)",
+            "m2v-bge-m3-1024d": {"texts_per_wh": 3191024, "throughput": "14,171 texts/s"},
+            "m2v-qwen3-1024d": {"texts_per_wh": 3047706, "throughput": "14,056 texts/s"},
+            "all-MiniLM-L6-v2": {"texts_per_wh": 1129181, "throughput": "2,587 texts/s"},
+            "comparison": "Model2Vec is ~3x more energy efficient than SentenceTransformers"
+        }
     }
 
 @app.get("/health")
@@ -255,18 +268,25 @@ async def list_models():
     """Ollama-compatible endpoint to list models"""
     model_list = [
         {
-            "name": "qwen25-1024d",
-            "size": 65000000,  # ~65MB
-            "digest": "qwen25-1024d-m2v-instruction-aware",
-            "modified_at": "2025-10-14T00:00:00Z",
-            "details": "🔥 Qwen25-1024D (PRIMARY) - Instruction-Aware! Quality: 0.841 | 65MB | 500-1000x FASTER"
+            "name": "m2v-bge-m3-1024d",
+            "size": 21000000,  # ~21MB
+            "digest": "m2v-bge-m3-1024d-distilled",
+            "modified_at": "2025-12-05T00:00:00Z",
+            "details": "🔥 M2V-BGE-M3 (PRIMARY) - Distilled from BGE-M3 | MTEB: 0.47 | 3x energy efficient | 14k texts/s"
+        },
+        {
+            "name": "bge-m3-onnx",
+            "size": 150000000,  # ~150MB
+            "digest": "bge-m3-onnx-int8",
+            "modified_at": "2025-12-05T00:00:00Z",
+            "details": "⚡ BGE-M3 ONNX INT8 (CPU) - High quality embeddings | MTEB: ~0.60 | 1024D"
         },
         {
             "name": "gemma-768d",
-            "size": 400000000,  # ~400MB (corrected size)
+            "size": 400000000,  # ~400MB
             "digest": "gemma-768d-m2v-deposium",
             "modified_at": "2025-10-13T00:00:00Z",
-            "details": "⚡ Gemma-768D (SECONDARY) - Quality: 0.551 | Multilingual: 0.737"
+            "details": "📚 Gemma-768D (LEGACY) - Multilingual | MTEB: 0.55"
         },
         {
             "name": "qwen3-rerank",
