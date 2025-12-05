@@ -69,3 +69,12 @@ venv_*/
 !src/models/
 !src/models/complexity_classifier/
 !src/models/complexity_classifier/model_quantized.onnx
+
+# Ignore temporary working directories (local model downloads)
+bge-m3-onnx-int8/
+m2v-bge-m3-1024d/
+m2v-qwen3-emb-0.6b-1024d/
+qwen3-emb-0.6b-onnx/
+mteb_*.json
+sts_*.json
+mteb_results_*/

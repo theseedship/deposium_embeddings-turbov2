@@ -43,7 +43,93 @@ except ImportError:
     BitsAndBytesConfig = None
     BNB_AVAILABLE = False
 
+# ONNX imports for BGE-M3 ONNX
+try:
+    import onnxruntime as ort
+    from transformers import AutoTokenizer
+    import numpy as np
+    ONNX_AVAILABLE = True
+except ImportError:
+    ort = None
+    AutoTokenizer = None
+    np = None
+    ONNX_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+
+class OnnxEmbeddingModel:
+    """
+    Wrapper for ONNX embedding models (like BGE-M3 ONNX INT8).
+    Provides a compatible interface with encode() method.
+    """
+
+    def __init__(self, model_path: str, tokenizer_path: str = None):
+        """
+        Initialize ONNX embedding model.
+
+        Args:
+            model_path: Path to ONNX model file
+            tokenizer_path: Path to tokenizer (defaults to model directory)
+        """
+        if not ONNX_AVAILABLE:
+            raise ImportError("onnxruntime and transformers required for ONNX models")
+
+        self.model_path = model_path
+        tokenizer_path = tokenizer_path or str(Path(model_path).parent)
+
+        # Load ONNX session
+        providers = ['CPUExecutionProvider']  # Force CPU for consistency
+        self.session = ort.InferenceSession(model_path, providers=providers)
+
+        # Load tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+        # Get output name (dense_vecs for BGE-M3)
+        self.output_name = "dense_vecs"
+
+        logger.info(f"ONNX model loaded: {model_path}")
+
+    def encode(self, texts, batch_size: int = 32, **kwargs):
+        """
+        Encode texts to embeddings.
+
+        Args:
+            texts: List of texts or single text
+            batch_size: Batch size for encoding
+
+        Returns:
+            numpy array of embeddings
+        """
+        if isinstance(texts, str):
+            texts = [texts]
+
+        all_embeddings = []
+
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+
+            # Tokenize
+            inputs = self.tokenizer(
+                batch_texts,
+                padding=True,
+                truncation=True,
+                max_length=8192,  # BGE-M3 supports long context
+                return_tensors="np"
+            )
+
+            # Run inference
+            outputs = self.session.run(
+                [self.output_name],
+                {
+                    "input_ids": inputs["input_ids"].astype(np.int64),
+                    "attention_mask": inputs["attention_mask"].astype(np.int64)
+                }
+            )
+
+            all_embeddings.append(outputs[0])
+
+        return np.vstack(all_embeddings)
 
 
 @dataclass
@@ -88,21 +174,34 @@ class ModelManager:
         
     def _register_models(self):
         """Register all available models with their configurations."""
-        
-        # Qwen25-1024D (PRIMARY - highest priority)
-        self.configs["qwen25-1024d"] = ModelConfig(
-            name="qwen25-1024d",
+
+        # M2V-BGE-M3-1024D (PRIMARY - best quality static embeddings)
+        # MTEB: STS 0.58, Classification 0.66, Overall 0.47
+        self.configs["m2v-bge-m3-1024d"] = ModelConfig(
+            name="m2v-bge-m3-1024d",
             type="model2vec",
-            path="models/qwen25-deposium-1024d",
-            hub_id="tss-deposium/qwen25-deposium-1024d",
+            path="models/m2v-bge-m3-1024d",
+            hub_id="tss-deposium/m2v-bge-m3-1024d",
             priority=1,  # Equal priority for all models
             estimated_vram_mb=500,
             device=self.device
         )
-        
-        # Gemma-768D (SECONDARY)
+
+        # BGE-M3 ONNX INT8 (HIGH QUALITY - full transformer, CPU optimized)
+        # Best quality but slower than Model2Vec
+        self.configs["bge-m3-onnx"] = ModelConfig(
+            name="bge-m3-onnx",
+            type="onnx_embedding",
+            path="models/bge-m3-onnx-int8",
+            hub_id="gpahal/bge-m3-onnx-int8",
+            priority=1,  # Equal priority for all models
+            estimated_vram_mb=0,  # ONNX runs on CPU
+            device="cpu"
+        )
+
+        # Gemma-768D (LEGACY - kept for backwards compatibility)
         self.configs["gemma-768d"] = ModelConfig(
-            name="gemma-768d", 
+            name="gemma-768d",
             type="model2vec",
             path="models/gemma-deposium-768d",
             hub_id="tss-deposium/gemma-deposium-768d",
@@ -372,16 +471,41 @@ class ModelManager:
                     import onnxruntime as ort
                 except ImportError:
                     raise ImportError("onnxruntime not installed")
-                
+
                 model_path = Path(config.path)
                 if not model_path.exists():
                     raise ValueError(f"ONNX model not found at {config.path}")
-                
+
                 # Create ONNX inference session
                 providers = ['CPUExecutionProvider']  # Force CPU for consistency
                 model = ort.InferenceSession(str(model_path), providers=providers)
                 logger.info(f"✅ {name} loaded (ONNX on CPU)")
-                
+
+            elif config.type == "onnx_embedding":
+                # Load ONNX embedding model (BGE-M3 ONNX INT8)
+                if not ONNX_AVAILABLE:
+                    raise ImportError("onnxruntime and transformers required for ONNX embedding models")
+
+                # Try local path first, then Docker path
+                local_path = Path(config.path) if config.path else None
+                docker_path = Path(f"/app/local_models/{name}")
+
+                if docker_path.exists():
+                    model_file = docker_path / "model_quantized.onnx"
+                    model = OnnxEmbeddingModel(str(model_file), str(docker_path))
+                    logger.info(f"✅ {name} loaded from Docker image (ONNX CPU)")
+                elif local_path and local_path.exists():
+                    model_file = local_path / "model_quantized.onnx"
+                    model = OnnxEmbeddingModel(str(model_file), str(local_path))
+                    logger.info(f"✅ {name} loaded from local path (ONNX CPU)")
+                else:
+                    # Download from HuggingFace
+                    from huggingface_hub import snapshot_download
+                    cache_dir = snapshot_download(repo_id=config.hub_id)
+                    model_file = Path(cache_dir) / "model_quantized.onnx"
+                    model = OnnxEmbeddingModel(str(model_file), cache_dir)
+                    logger.info(f"✅ {name} loaded from HuggingFace (ONNX CPU)")
+
             elif config.type == "sentence_transformer":
                 # Load SentenceTransformer model
                 if SentenceTransformer is None:
