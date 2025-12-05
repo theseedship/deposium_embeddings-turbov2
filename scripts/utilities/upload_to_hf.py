@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Upload Qwen25-1024D Model2Vec to HuggingFace Hub
+Upload Model2Vec models to HuggingFace Hub
 
-This will upload the distilled model to: tss-deposium/qwen25-deposium-1024d
+Configure via environment variables:
+- HF_UPLOAD_REPO_ID: Target repository (default: tss-deposium/m2v-bge-m3-1024d)
+- HF_UPLOAD_MODEL_PATH: Local model path (default: models/m2v-bge-m3-1024d)
 """
 
-from huggingface_hub import HfApi, create_repo
 import os
+from huggingface_hub import HfApi, create_repo
 from pathlib import Path
 
-# Configuration
-REPO_ID = "tss-deposium/qwen25-deposium-1024d"
-MODEL_PATH = "models/qwen25-deposium-1024d"
+# Configuration from environment variables
+REPO_ID = os.getenv("HF_UPLOAD_REPO_ID", "tss-deposium/m2v-bge-m3-1024d")
+MODEL_PATH = os.getenv("HF_UPLOAD_MODEL_PATH", "models/m2v-bge-m3-1024d")
+
 
 def upload_model():
     """Upload model to HuggingFace Hub"""
@@ -21,8 +24,10 @@ def upload_model():
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found at {MODEL_PATH}")
 
+    model_name = model_path.name
+
     print("=" * 80)
-    print("🚀 Uploading Qwen25-1024D Model2Vec to HuggingFace Hub")
+    print(f"Uploading {model_name} to HuggingFace Hub")
     print("=" * 80)
     print(f"Repository: {REPO_ID}")
     print(f"Model Path: {MODEL_PATH}")
@@ -34,14 +39,14 @@ def upload_model():
     # Check if logged in
     try:
         user_info = api.whoami()
-        print(f"✅ Logged in as: {user_info['name']}")
+        print(f"Logged in as: {user_info['name']}")
     except Exception as e:
-        print("❌ Not logged in to HuggingFace!")
+        print("Not logged in to HuggingFace!")
         print("Please run: huggingface-cli login")
         return
 
     # Create repository if it doesn't exist
-    print(f"\n📦 Creating repository: {REPO_ID}")
+    print(f"\nCreating repository: {REPO_ID}")
     try:
         create_repo(
             repo_id=REPO_ID,
@@ -49,12 +54,12 @@ def upload_model():
             exist_ok=True,
             private=False
         )
-        print("✅ Repository created/verified")
+        print("Repository created/verified")
     except Exception as e:
-        print(f"⚠️  Repository creation: {e}")
+        print(f"Repository creation: {e}")
 
     # Upload all files
-    print(f"\n📤 Uploading model files...")
+    print(f"\nUploading model files...")
 
     files_to_upload = [
         "model.safetensors",
@@ -76,27 +81,19 @@ def upload_model():
                     repo_id=REPO_ID,
                     repo_type="model"
                 )
-                print(f"  ✅ {filename} uploaded")
+                print(f"  {filename} uploaded")
             except Exception as e:
-                print(f"  ❌ Failed to upload {filename}: {e}")
+                print(f"  Failed to upload {filename}: {e}")
         else:
-            print(f"  ⚠️  {filename} not found, skipping")
+            print(f"  {filename} not found, skipping")
 
     print()
     print("=" * 80)
-    print("🎉 Upload Complete!")
+    print("Upload Complete!")
     print("=" * 80)
     print(f"Model available at: https://huggingface.co/{REPO_ID}")
     print()
-    print("📊 Model Info:")
-    print("  - Dimensions: 1024D")
-    print("  - Size: ~65MB (298MB safetensors)")
-    print("  - Quality: 0.841 overall")
-    print("  - Instruction-Awareness: 0.953")
-    print("  - Base: Qwen2.5-1.5B-Instruct (1.54B params distilled)")
-    print()
-    print("🚀 Railway will now be able to download this model at startup!")
-    print()
+
 
 if __name__ == "__main__":
     upload_model()

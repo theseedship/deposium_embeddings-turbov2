@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile, Header, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from model2vec import StaticModel
 import torch
@@ -146,9 +146,13 @@ async def initialize_models():
     
     logger.info("✅ Model Manager initialized! Models will load on first use.")
 
+# Default model names from environment variables
+DEFAULT_EMBEDDING_MODEL = os.getenv("DEFAULT_EMBEDDING_MODEL", "m2v-bge-m3-1024d")
+DEFAULT_RERANK_MODEL = os.getenv("DEFAULT_RERANK_MODEL", "qwen3-rerank")
+
 # Request/Response models
 class EmbedRequest(BaseModel):
-    model: str = "m2v-bge-m3-1024d"  # Distilled BGE-M3, 3x more energy efficient
+    model: str = Field(default=DEFAULT_EMBEDDING_MODEL, description="Model to use for embeddings")
     input: str | List[str]
 
 class EmbedResponse(BaseModel):
@@ -156,7 +160,7 @@ class EmbedResponse(BaseModel):
     embeddings: List[List[float]]
 
 class RerankRequest(BaseModel):
-    model: str = "qwen3-rerank"
+    model: str = Field(default=DEFAULT_RERANK_MODEL, description="Model to use for reranking")
     query: str
     documents: List[str]
     top_k: Optional[int] = None  # Return all by default

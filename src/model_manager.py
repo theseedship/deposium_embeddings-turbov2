@@ -155,14 +155,14 @@ class ModelManager:
     - Automatic model unloading when VRAM limit exceeded
     """
     
-    def __init__(self, max_vram_mb: int = 5000):
+    def __init__(self, max_vram_mb: int = None):
         """
         Initialize model manager.
-        
+
         Args:
-            max_vram_mb: Maximum VRAM to use in MB (default 5GB for 6GB GPU)
+            max_vram_mb: Maximum VRAM to use in MB (default from VRAM_LIMIT_MB env or 5GB)
         """
-        self.max_vram_mb = max_vram_mb
+        self.max_vram_mb = max_vram_mb or int(os.getenv("VRAM_LIMIT_MB", "5000"))
         self.models: OrderedDict[str, Any] = OrderedDict()
         self.configs: Dict[str, ModelConfig] = {}
         self.last_used: Dict[str, float] = {}
@@ -173,7 +173,14 @@ class ModelManager:
         self._register_models()
         
     def _register_models(self):
-        """Register all available models with their configurations."""
+        """Register all available models with their configurations.
+
+        Model HuggingFace IDs can be overridden via environment variables:
+        - HF_MODEL_M2V_BGE_M3: Hub ID for m2v-bge-m3-1024d
+        - HF_MODEL_BGE_M3_ONNX: Hub ID for bge-m3-onnx
+        - HF_MODEL_GEMMA_768D: Hub ID for gemma-768d
+        - HF_MODEL_QWEN3_EMBED: Hub ID for qwen3-embed
+        """
 
         # M2V-BGE-M3-1024D (PRIMARY - best quality static embeddings)
         # MTEB: STS 0.58, Classification 0.66, Overall 0.47
@@ -181,7 +188,7 @@ class ModelManager:
             name="m2v-bge-m3-1024d",
             type="model2vec",
             path="models/m2v-bge-m3-1024d",
-            hub_id="tss-deposium/m2v-bge-m3-1024d",
+            hub_id=os.getenv("HF_MODEL_M2V_BGE_M3", "tss-deposium/m2v-bge-m3-1024d"),
             priority=1,  # Equal priority for all models
             estimated_vram_mb=500,
             device=self.device
@@ -193,7 +200,7 @@ class ModelManager:
             name="bge-m3-onnx",
             type="onnx_embedding",
             path="models/bge-m3-onnx-int8",
-            hub_id="gpahal/bge-m3-onnx-int8",
+            hub_id=os.getenv("HF_MODEL_BGE_M3_ONNX", "gpahal/bge-m3-onnx-int8"),
             priority=1,  # Equal priority for all models
             estimated_vram_mb=0,  # ONNX runs on CPU
             device="cpu"
@@ -204,12 +211,12 @@ class ModelManager:
             name="gemma-768d",
             type="model2vec",
             path="models/gemma-deposium-768d",
-            hub_id="tss-deposium/gemma-deposium-768d",
+            hub_id=os.getenv("HF_MODEL_GEMMA_768D", "tss-deposium/gemma-deposium-768d"),
             priority=1,  # Equal priority for all models
             estimated_vram_mb=800,
             device=self.device
         )
-        
+
         # VL Complexity Classifier (ONNX, CPU-based)
         self.configs["vl-classifier"] = ModelConfig(
             name="vl-classifier",
@@ -219,17 +226,17 @@ class ModelManager:
             estimated_vram_mb=0,  # ONNX runs on CPU
             device="cpu"
         )
-        
+
         # Qwen3-Embedding-0.6B (embeddings + reranking) - Memory optimized
         self.configs["qwen3-embed"] = ModelConfig(
             name="qwen3-embed",
             type="sentence_transformer",
-            hub_id="Qwen/Qwen3-Embedding-0.6B",
+            hub_id=os.getenv("HF_MODEL_QWEN3_EMBED", "Qwen/Qwen3-Embedding-0.6B"),
             priority=1,  # Equal priority for all models
             estimated_vram_mb=1200,  # ~2GB with float16 (was 4GB with float32)
             device=self.device
         )
-        
+
         # Qwen3-rerank (alias for qwen3-embed)
         self.configs["qwen3-rerank"] = ModelConfig(
             name="qwen3-rerank",
