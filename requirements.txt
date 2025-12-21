@@ -29,3 +29,8 @@ onnxruntime==1.23.2  # Requires numpy<2.0 (incompatible with NumPy 2.x)
 # MTEB for model evaluation (optional, dev only)
 # mteb==1.18.0
 
+# OpenBench for standardized LLM benchmarking
+# Categories: Knowledge, Coding, Math, Reasoning, Cybersecurity, Search
+# Docs: https://openbench.dev/installation
+openbench>=0.1.0
+

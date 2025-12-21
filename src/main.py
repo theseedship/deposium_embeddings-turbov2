@@ -13,6 +13,8 @@ import os
 from .classifier import get_classifier, ClassifyRequest
 # Import model manager
 from .model_manager import get_model_manager
+# Import benchmark runner
+from .benchmarks import OpenBenchRunner, BenchmarkCategory, get_openbench_runner
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -512,4 +514,143 @@ async def classify_document_base64(request: ClassifyRequest, api_key: str = Depe
         raise
     except Exception as e:
         logger.error(f"Classification error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Benchmarks API (OpenBench Integration)
+# ============================================================================
+
+class BenchmarkRequest(BaseModel):
+    """Request for running a benchmark"""
+    category: str = Field(
+        default="search",
+        description="Benchmark category: knowledge, coding, math, reasoning, cybersecurity, search"
+    )
+    provider: Optional[str] = Field(
+        default="groq",
+        description="LLM provider (groq, openai, anthropic)"
+    )
+    model: Optional[str] = Field(
+        default="llama-3.1-8b-instant",
+        description="Model name"
+    )
+    sample_limit: Optional[int] = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description="Maximum samples to evaluate"
+    )
+    custom_corpus: Optional[List[dict]] = Field(
+        default=None,
+        description="Custom corpus data for search benchmarks"
+    )
+
+
+@app.get("/api/benchmarks")
+async def list_benchmarks(api_key: str = Depends(verify_api_key)):
+    """
+    List available benchmark categories and providers.
+
+    Returns information about:
+    - Available categories (knowledge, coding, math, reasoning, cybersecurity, search)
+    - Supported providers
+    - Default configuration
+    """
+    try:
+        runner = get_openbench_runner()
+        return await runner.list_available_benchmarks()
+    except Exception as e:
+        logger.error(f"Benchmark list error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/benchmarks/run")
+async def run_benchmark(request: BenchmarkRequest, api_key: str = Depends(verify_api_key)):
+    """
+    Run a benchmark evaluation.
+
+    **Categories:**
+    - `knowledge`: General knowledge (MMLU, TriviaQA)
+    - `coding`: Code generation (HumanEval, MBPP)
+    - `math`: Mathematical reasoning (GSM8K, MATH)
+    - `reasoning`: Logic and deduction (ARC, HellaSwag)
+    - `cybersecurity`: Security tasks
+    - `search`: Retrieval quality (custom corpus supported)
+
+    **For custom corpus evaluation:**
+    ```json
+    {
+        "category": "search",
+        "custom_corpus": [
+            {
+                "query": "What is machine learning?",
+                "relevant_docs": ["doc1_content", "doc2_content"]
+            }
+        ]
+    }
+    ```
+
+    **Returns:**
+    - score: Overall benchmark score (0-1)
+    - metrics: Detailed metrics
+    - samples_evaluated: Number of samples tested
+    - duration_seconds: Execution time
+    """
+    try:
+        runner = get_openbench_runner()
+        result = await runner.run_benchmark(
+            category=request.category,
+            provider=request.provider,
+            model=request.model,
+            custom_dataset=request.custom_corpus,
+            sample_limit=request.sample_limit or 100
+        )
+        return result.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Benchmark run error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/benchmarks/corpus-eval")
+async def evaluate_corpus(
+    corpus_data: List[dict],
+    provider: Optional[str] = "groq",
+    model: Optional[str] = "llama-3.1-8b-instant",
+    sample_limit: Optional[int] = 100,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Evaluate a Deposium corpus for retrieval quality.
+
+    **Input format:**
+    ```json
+    [
+        {
+            "query": "Search query",
+            "relevant_docs": ["Expected relevant document content..."],
+            "context": "Optional context"
+        }
+    ]
+    ```
+
+    **Returns:**
+    - Retrieval precision metrics
+    - Per-query scores
+    - Aggregate quality score
+    """
+    try:
+        runner = get_openbench_runner()
+        result = await runner.run_benchmark(
+            category="search",
+            provider=provider,
+            model=model,
+            custom_dataset=corpus_data,
+            sample_limit=sample_limit
+        )
+        return result.to_dict()
+    except Exception as e:
+        logger.error(f"Corpus evaluation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
