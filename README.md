@@ -234,8 +234,120 @@ Environment variables:
 - `PORT=11435` (auto-detected)
 - `HOST=0.0.0.0` (auto-configured)
 
+## 🎯 OpenBench Benchmarking API - ✅ NEW (Sprint 62)
+
+Standardized LLM benchmarking endpoints for quality evaluation.
+
+### Endpoints
+
+#### `GET /api/benchmarks`
+List available benchmark categories and providers.
+
+**Response:**
+```json
+{
+  "categories": {
+    "knowledge": { "name": "Knowledge", "description": "General knowledge", "benchmarks": ["MMLU", "TriviaQA"] },
+    "coding": { "name": "Coding", "description": "Code generation", "benchmarks": ["HumanEval", "MBPP"] },
+    "math": { "name": "Math", "description": "Mathematical reasoning", "benchmarks": ["GSM8K", "MATH"] },
+    "reasoning": { "name": "Reasoning", "description": "Logic and deduction", "benchmarks": ["ARC", "HellaSwag"] },
+    "cybersecurity": { "name": "Cybersecurity", "description": "Security tasks", "benchmarks": [] },
+    "search": { "name": "Search", "description": "Retrieval quality", "benchmarks": [] }
+  },
+  "providers": ["groq", "openai", "anthropic"],
+  "default_provider": "groq",
+  "default_model": "llama-3.1-8b-instant"
+}
+```
+
+#### `POST /api/benchmarks/run`
+Run a standardized benchmark.
+
+**Request:**
+```json
+{
+  "category": "search",
+  "provider": "groq",
+  "model": "llama-3.1-8b-instant",
+  "sample_limit": 100
+}
+```
+
+**Response:**
+```json
+{
+  "category": "search",
+  "provider": "groq",
+  "model": "llama-3.1-8b-instant",
+  "score": 0.847,
+  "metrics": {
+    "precision": 0.82,
+    "recall": 0.87,
+    "f1": 0.845
+  },
+  "samples_evaluated": 100,
+  "duration_seconds": 45.3,
+  "timestamp": "2025-12-21T10:30:00Z",
+  "errors": []
+}
+```
+
+#### `POST /api/benchmarks/corpus-eval`
+Evaluate a custom corpus for retrieval quality.
+
+**Request:**
+```json
+{
+  "corpus_data": [
+    {
+      "query": "What is machine learning?",
+      "relevant_docs": ["Machine learning is a subset of AI..."],
+      "context": "Technical documentation"
+    }
+  ],
+  "provider": "groq",
+  "model": "llama-3.1-8b-instant",
+  "sample_limit": 100
+}
+```
+
+**Response:**
+```json
+{
+  "category": "search",
+  "provider": "groq",
+  "model": "llama-3.1-8b-instant",
+  "score": 0.785,
+  "metrics": {
+    "retrieval_precision": 0.76,
+    "semantic_similarity": 0.81
+  },
+  "samples_evaluated": 50,
+  "duration_seconds": 23.1,
+  "timestamp": "2025-12-21T10:35:00Z",
+  "errors": []
+}
+```
+
+### Implementation
+
+**Files:**
+- `src/benchmarks/__init__.py` - Module init
+- `src/benchmarks/openbench_runner.py` - OpenBenchRunner class (469 lines)
+- `src/main.py` - REST endpoints (lines 520-656)
+
+**Dependencies:**
+- `openbench>=0.1.0` - OpenBench framework (optional, falls back to simulated results)
+
+**Integration with deposium_MCPs:**
+```
+deposium_MCPs (MCP tools) ──REST──► deposium_embeddings-turbov2 (OpenBench)
+                                    └── /api/benchmarks/*
+```
+
 ## 📚 References
 
 - [Model2Vec](https://github.com/MinishLab/model2vec)
 - [HuggingFace Model](https://huggingface.co/C10X/Qwen3-Embedding-TurboX.v2)
 - [Ollama API Docs](https://github.com/ollama/ollama/blob/main/docs/api.md)
+- [OpenBench](https://openbench.dev) - LLM Benchmarking Framework
