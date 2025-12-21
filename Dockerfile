@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+# Install uv (Rust-based Python package installer - 10-100x faster than pip)
+# https://github.com/astral-sh/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
@@ -36,7 +40,8 @@ ENV HF_HOME=/app/models
 # Install Python dependencies
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# --system flag installs into system python, avoiding venv overhead in Docker
+RUN uv pip install --system --no-cache -r requirements.txt
 
 # Copy application
 COPY src/ ./src/
