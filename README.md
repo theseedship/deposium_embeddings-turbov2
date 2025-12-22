@@ -347,6 +347,7 @@ deposium_MCPs (MCP tools) ──REST──► deposium_embeddings-turbov2 (OpenB
 
 ## 📚 References
 
+- [CHANGELOG](CHANGELOG.md) - Release history
 - [Model2Vec](https://github.com/MinishLab/model2vec)
 - [HuggingFace Model](https://huggingface.co/C10X/Qwen3-Embedding-TurboX.v2)
 - [Ollama API Docs](https://github.com/ollama/ollama/blob/main/docs/api.md)
