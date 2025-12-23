@@ -1,0 +1,96 @@
+{
+  "test_date": "2025-10-23",
+  "model": "model_quantized.onnx (current)",
+  "statistics": {
+    "accuracy": 75.0,
+    "low_recall": 100.0,
+    "high_recall": 66.66666666666666,
+    "avg_prob_low": 0.453943382948637,
+    "avg_prob_high": 0.546056617051363,
+    "low_predictions": 4,
+    "high_predictions": 4,
+    "total": 8
+  },
+  "detailed_results": [
+    {
+      "image": "plain_text.png",
+      "description": "Plain text document - only text lines",
+      "expected": "LOW",
+      "predicted": "LOW",
+      "confidence": 0.5993996262550354,
+      "prob_low": 0.5993996262550354,
+      "prob_high": 0.4006003737449646,
+      "correct": true
+    },
+    {
+      "image": "bar_chart.png",
+      "description": "Bar chart with colored bars",
+      "expected": "HIGH",
+      "predicted": "LOW",
+      "confidence": 0.5219780802726746,
+      "prob_low": 0.5219780802726746,
+      "prob_high": 0.47802191972732544,
+      "correct": false
+    },
+    {
+      "image": "line_graph.png",
+      "description": "Line graph with data points",
+      "expected": "HIGH",
+      "predicted": "HIGH",
+      "confidence": 0.683799684047699,
+      "prob_low": 0.316200315952301,
+      "prob_high": 0.683799684047699,
+      "correct": true
+    },
+    {
+      "image": "pie_chart.png",
+      "description": "Pie chart with colored segments",
+      "expected": "HIGH",
+      "predicted": "HIGH",
+      "confidence": 0.6178215742111206,
+      "prob_low": 0.3821784555912018,
+      "prob_high": 0.6178215742111206,
+      "correct": true
+    },
+    {
+      "image": "table.png",
+      "description": "Data table with grid",
+      "expected": "HIGH",
+      "predicted": "LOW",
+      "confidence": 0.5587786436080933,
+      "prob_low": 0.5587786436080933,
+      "prob_high": 0.44122135639190674,
+      "correct": false
+    },
+    {
+      "image": "map.png",
+      "description": "Geographic map with landmasses and grid",
+      "expected": "HIGH",
+      "predicted": "HIGH",
+      "confidence": 0.6798224449157715,
+      "prob_low": 0.32017749547958374,
+      "prob_high": 0.6798224449157715,
+      "correct": true
+    },
+    {
+      "image": "diagram.png",
+      "description": "Flowchart diagram with boxes and arrows",
+      "expected": "HIGH",
+      "predicted": "HIGH",
+      "confidence": 0.6856922507286072,
+      "prob_low": 0.3143078088760376,
+      "prob_high": 0.6856922507286072,
+      "correct": true
+    },
+    {
+      "image": "simple_form.png",
+      "description": "Simple form with text fields",
+      "expected": "LOW",
+      "predicted": "LOW",
+      "confidence": 0.6185266375541687,
+      "prob_low": 0.6185266375541687,
+      "prob_high": 0.3814733326435089,
+      "correct": true
+    }
+  ]
+}
