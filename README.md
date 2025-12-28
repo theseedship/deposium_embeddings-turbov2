@@ -1,15 +1,12 @@
-# Deposium Embeddings - Instruction-Aware + Multi-Model Service
+# Deposium Embeddings - Multi-Model Service (v11.0.0)
 
-🔥 **NEW: Qwen25-1024D** - First instruction-aware static embeddings model! Quality: 0.841, Size: 65MB
-
-Ultra-fast embeddings service with **instruction-awareness** + full-size models for maximum flexibility.
+Ultra-fast embeddings service with **multi-model support** for production deployments.
 
 ## 🚀 Features
 
-- 🔥 **Qwen25-1024D** (PRIMARY) - Instruction-aware embeddings (UNIQUE capability)
-- ⚡ **Gemma-768D** (SECONDARY) - Multilingual support
-- 🎯 **EmbeddingGemma-300M** - Full-size embeddings (300M params)
-- 🚀 **Qwen3-Embedding-0.6B** - Full-size embeddings (600M params, MTEB: 64.33)
+- 🔥 **M2V-BGE-M3-1024D** (PRIMARY) - Distilled from BGE-M3, 3x energy efficient
+- ⚡ **BGE-M3-ONNX** (CPU) - INT8 quantized for high quality on CPU
+- 📚 **Gemma-768D** (LEGACY) - Multilingual support
 - 🏆 **Qwen3 Reranking** - Optimized FP32 reranking (242ms)
 - 📄 **Document Complexity Classifier** - Binary routing (LOW→OCR, HIGH→VLM)
 - **500-1000x faster** than full LLMs
@@ -18,24 +15,30 @@ Ultra-fast embeddings service with **instruction-awareness** + full-size models 
 
 ## 📊 Available Models
 
-### 🔥 Qwen25-1024D (PRIMARY - INSTRUCTION-AWARE)
-- **Quality:** 0.841 overall (+52% vs Gemma-768D)
-- **Instruction-Awareness:** 0.953 (UNIQUE capability)
-- **Semantic:** 0.950 | **Code:** 0.864 | **Conversational:** 0.846
-- **Size:** 65MB (6x smaller than Gemma-768D)
+### 🔥 M2V-BGE-M3-1024D (PRIMARY)
+- **Quality:** MTEB STS ~0.58
+- **Size:** ~21MB
 - **Dimensions:** 1024D
-- **Speed:** 500-1000x faster than full Qwen2.5-1.5B LLM
-- **Base:** Qwen2.5-1.5B-Instruct (1.54B params distilled)
-- **Use case:** Primary model - instruction-aware RAG, Q&A, code search, conversational AI
+- **Speed:** 14k texts/s (3x more energy efficient)
+- **Base:** BAAI/bge-m3 (distilled via Model2Vec)
+- **Use case:** Primary model - RAG, semantic search, high throughput
 
-### ⚡ Gemma-768D (SECONDARY - MULTILINGUAL)
+### ⚡ BGE-M3-ONNX (CPU FALLBACK)
+- **Quality:** MTEB ~0.60 (high quality)
+- **Size:** ~150MB (INT8 quantized)
+- **Dimensions:** 1024D
+- **Speed:** Optimized for CPU inference
+- **Base:** BAAI/bge-m3 (ONNX INT8)
+- **Use case:** High quality embeddings on CPU-only deployments
+
+### 📚 Gemma-768D (LEGACY)
 - **Quality:** 0.551 overall
 - **Multilingual:** 0.737 (best for cross-language)
 - **Size:** 400MB
 - **Dimensions:** 768D
 - **Speed:** 500-700x faster than full Gemma
 - **Base:** google/embeddinggemma-300m
-- **Use case:** Secondary - multilingual support, cross-language search
+- **Use case:** Legacy - multilingual support, cross-language search
 
 ## 🐳 Docker Usage
 
@@ -57,15 +60,15 @@ curl http://localhost:11435/health
 # List models
 curl http://localhost:11435/api/tags
 
-# Generate embedding with Qwen25-1024D (PRIMARY - instruction-aware)
+# Generate embedding with M2V-BGE-M3-1024D (PRIMARY)
 curl -X POST http://localhost:11435/api/embed \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen25-1024d","input":"Explain how neural networks work"}'
+  -d '{"model":"m2v-bge-m3-1024d","input":"Explain how neural networks work"}'
 
-# Generate embedding with Gemma-768D (SECONDARY - multilingual)
+# Generate embedding with BGE-M3-ONNX (CPU fallback)
 curl -X POST http://localhost:11435/api/embed \
   -H "Content-Type: application/json" \
-  -d '{"model":"gemma-768d","input":"Machine learning et intelligence artificielle"}'
+  -d '{"model":"bge-m3-onnx","input":"Machine learning et intelligence artificielle"}'
 
 # Reranking with Qwen3 (FP32 optimized)
 curl -X POST http://localhost:11435/api/rerank \
@@ -99,15 +102,15 @@ Generate embeddings with model selection
 **Request:**
 ```json
 {
-  "model": "qwen25-1024d",  // or "gemma-768d", "qwen3-embed"
+  "model": "m2v-bge-m3-1024d",  // or "bge-m3-onnx", "gemma-768d"
   "input": "Explain how neural networks work"
 }
 ```
 
-**Response (qwen25-1024d - 1024D):**
+**Response (m2v-bge-m3-1024d - 1024D):**
 ```json
 {
-  "model": "qwen25-1024d",
+  "model": "m2v-bge-m3-1024d",
   "embeddings": [[0.123, -0.456, ...]]  // 1024 dimensions
 }
 ```
@@ -161,17 +164,17 @@ curl -X POST http://localhost:11435/api/classify \
 
 ## 🔧 Integration with N8N
 
-### Qwen25-1024D (PRIMARY - Instruction-Aware)
+### M2V-BGE-M3-1024D (PRIMARY)
 Configure N8N Ollama credentials:
 - **Base URL:** `http://deposium-embeddings-turbov2:11435`
-- **Model Name:** `qwen25-1024d`
-- **Use case:** RAG with instruction queries, Q&A, code search
+- **Model Name:** `m2v-bge-m3-1024d`
+- **Use case:** RAG, semantic search, high throughput
 
-### Gemma-768D (SECONDARY - Multilingual)
+### BGE-M3-ONNX (CPU FALLBACK)
 Configure N8N Ollama credentials:
 - **Base URL:** `http://deposium-embeddings-turbov2:11435`
-- **Model Name:** `gemma-768d`
-- **Use case:** Multilingual search, cross-language retrieval
+- **Model Name:** `bge-m3-onnx`
+- **Use case:** High quality embeddings on CPU
 
 ### Document Complexity Classifier
 Configure N8N HTTP Request node:
@@ -192,14 +195,20 @@ Configure N8N HTTP Request node:
 
 ## 📈 Performance
 
-### Qwen25-1024D (PRIMARY)
-- **Overall Quality:** 0.841 (+52% vs Gemma-768D)
-- **Instruction-Awareness:** 0.953 (UNIQUE capability)
-- **Inference Speed:** ~500-1000x faster than full Qwen2.5-1.5B LLM
-- **Memory Usage:** ~100-150MB RAM
-- **Model Size:** 65MB (10x smaller than Qwen3-Embedding)
+### M2V-BGE-M3-1024D (PRIMARY)
+- **Quality:** MTEB STS ~0.58
+- **Throughput:** ~14k texts/s
+- **Energy:** 3x more efficient than transformer models
+- **Memory Usage:** ~50MB RAM
+- **Model Size:** ~21MB
 
-### Gemma-768D (SECONDARY)
+### BGE-M3-ONNX (CPU)
+- **Quality:** MTEB ~0.60 (high quality)
+- **Throughput:** Optimized for CPU batches
+- **Memory Usage:** ~200MB RAM
+- **Model Size:** ~150MB (INT8)
+
+### Gemma-768D (LEGACY)
 - **Overall Quality:** 0.551
 - **Multilingual:** 0.737 (best for cross-language)
 - **Inference Speed:** ~500-700x faster than full Gemma
@@ -219,7 +228,8 @@ Configure N8N HTTP Request node:
 - **Total VRAM Usage**: ~2.1GB for all models (fits in 6GB GPU)
 
 #### Memory Usage Breakdown:
-- **Qwen25-1024D**: ~0MB GPU (Model2Vec runs on CPU)
+- **M2V-BGE-M3-1024D**: ~0MB GPU (Model2Vec runs on CPU)
+- **BGE-M3-ONNX**: ~0MB GPU (ONNX runs on CPU)
 - **Gemma-768D**: ~400MB GPU when loaded
 - **Qwen3-Reranker**: ~1.2GB GPU (float16 optimized)
 - **Classifier**: ~0MB GPU (ONNX runs on CPU)
@@ -237,6 +247,8 @@ Environment variables:
 ## 🎯 OpenBench Benchmarking API - ✅ NEW (Sprint 62)
 
 Standardized LLM benchmarking endpoints for quality evaluation.
+
+> **⚠️ Preview Feature**: When `openbench` package is not installed, endpoints return **simulated benchmark scores** for API testing. Install `pip install openbench` for real LLM evaluation.
 
 ### Endpoints
 
