@@ -291,6 +291,21 @@ class ModelManager:
             truncate_layers=6,  # Use 6 of 24 layers
             truncate_dims=512  # Truncate to 512D
         )
+
+        # ============================================================
+        # MXBAI-Rerank-V2 (SOTA cross-encoder reranker, 100+ languages)
+        # https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v2
+        # 0.5B params (base), Qwen2 architecture, BEIR 55.57
+        # Uses native mxbai-rerank library (not sentence-transformers)
+        # ============================================================
+        self.configs["mxbai-rerank-v2"] = ModelConfig(
+            name="mxbai-rerank-v2",
+            type="mxbai_reranker",
+            hub_id=os.getenv("HF_MODEL_MXBAI_RERANK", "mixedbread-ai/mxbai-rerank-base-v2"),
+            priority=1,
+            estimated_vram_mb=1000,  # ~1GB for base-v2
+            device=self.device
+        )
         
     def get_vram_usage_mb(self) -> Tuple[int, int]:
         """
@@ -664,6 +679,18 @@ class ModelManager:
                 if config.truncate_dims:
                     model._truncate_dims = config.truncate_dims
                     logger.info(f"   Embeddings will be truncated to {config.truncate_dims}D")
+
+            elif config.type == "mxbai_reranker":
+                # Load MXBAI Rerank V2 (SOTA cross-encoder)
+                # Uses native mxbai-rerank library
+                try:
+                    from mxbai_rerank import MxbaiRerankV2
+                except ImportError:
+                    raise ImportError("mxbai-rerank not installed. Install with: pip install mxbai-rerank")
+
+                logger.info(f"Loading MXBAI Reranker {name}...")
+                model = MxbaiRerankV2(config.hub_id)
+                logger.info(f"✅ {name} loaded (MXBAI cross-encoder reranker)")
 
             else:
                 raise ValueError(f"Unknown model type: {config.type}")

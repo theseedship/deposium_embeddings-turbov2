@@ -5,6 +5,14 @@ from model2vec import StaticModel
 import torch
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
+
+# MXBAI Reranker import
+try:
+    from mxbai_rerank import MxbaiRerankV2
+    MXBAI_RERANK_AVAILABLE = True
+except ImportError:
+    MxbaiRerankV2 = None
+    MXBAI_RERANK_AVAILABLE = False
 from pathlib import Path
 import logging
 import os
@@ -307,6 +315,34 @@ async def list_models():
             "digest": "resnet18-onnx-int8",
             "modified_at": "2025-10-22T00:00:00Z",
             "details": "🎯 Document Complexity Classifier - 93% accuracy, ~10ms latency"
+        },
+        {
+            "name": "mxbai-embed-2d",
+            "size": 800000000,  # ~800MB
+            "digest": "mxbai-embed-2d-large-v1",
+            "modified_at": "2026-01-10T00:00:00Z",
+            "details": "🎯 MXBAI-Embed-2D (24 layers) - 2D Matryoshka SOTA English | 1024D"
+        },
+        {
+            "name": "mxbai-embed-2d-fast",
+            "size": 400000000,  # ~400MB
+            "digest": "mxbai-embed-2d-large-v1-12layers",
+            "modified_at": "2026-01-10T00:00:00Z",
+            "details": "⚡ MXBAI-Embed-2D Fast (12 layers) - ~2x speedup | 768D"
+        },
+        {
+            "name": "mxbai-embed-2d-turbo",
+            "size": 250000000,  # ~250MB
+            "digest": "mxbai-embed-2d-large-v1-6layers",
+            "modified_at": "2026-01-10T00:00:00Z",
+            "details": "🚀 MXBAI-Embed-2D Turbo (6 layers) - ~4x speedup | 512D"
+        },
+        {
+            "name": "mxbai-rerank-v2",
+            "size": 1000000000,  # ~1GB
+            "digest": "mxbai-rerank-base-v2",
+            "modified_at": "2026-01-10T00:00:00Z",
+            "details": "🏆 MXBAI-Rerank-V2 SOTA cross-encoder | BEIR 55.57 | 100+ languages"
         }
     ]
 
@@ -366,15 +402,17 @@ async def create_embedding_alt(request: EmbedRequest, api_key: str = Depends(ver
 @app.post("/api/rerank")
 async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify_api_key)):
     """
-    Rerank documents by relevance to a query using FP32 models
+    Rerank documents by relevance to a query.
 
-    - qwen3-rerank: FP32 Qwen3-0.6B (242ms, BEST precision on Railway vCPU!)
-    - Can also use embedding models for reranking
+    **Models:**
+    - mxbai-rerank-v2: SOTA cross-encoder (BEIR 55.57, 100+ languages) - RECOMMENDED
+    - qwen3-rerank: Bi-encoder with cosine similarity (faster, lower quality)
+    - Embedding models: Can also use for reranking via cosine similarity
 
     Returns documents sorted by relevance score (highest first)
     """
     global model_manager
-    
+
     # Validate model selection
     available_models = model_manager.configs.keys()
     if request.model not in available_models:
@@ -390,16 +428,69 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify
         # Get model (lazy loading)
         selected_model = model_manager.get_model(request.model)
 
-        # For SentenceTransformer models (qwen3-rerank)
-        if isinstance(selected_model, SentenceTransformer):
+        # Check model type for appropriate reranking strategy
+        model_config = model_manager.configs.get(request.model)
+
+        # MXBAI Reranker (true cross-encoder - SOTA quality)
+        if model_config and model_config.type == "mxbai_reranker":
+            if not MXBAI_RERANK_AVAILABLE:
+                raise HTTPException(
+                    status_code=500,
+                    detail="mxbai-rerank library not installed. Install with: pip install mxbai-rerank"
+                )
+
+            # Use native cross-encoder reranking
+            top_k = request.top_k if request.top_k else len(request.documents)
+            ranked_results = selected_model.rank(
+                request.query,
+                request.documents,
+                return_documents=True,
+                top_k=top_k
+            )
+
+            # Convert to our response format
+            # mxbai-rerank returns: [{"index": i, "text": doc, "score": float}, ...]
+            results = [
+                {
+                    "index": item.get("index", i),
+                    "document": item.get("text", request.documents[item.get("index", i)]),
+                    "relevance_score": float(item.get("score", 0.0))
+                }
+                for i, item in enumerate(ranked_results)
+            ]
+
+            logger.info(f"Reranked {len(request.documents)} documents with {request.model} (cross-encoder), top score: {results[0]['relevance_score']:.4f}")
+
+        # SentenceTransformer models (bi-encoder with cosine similarity)
+        elif isinstance(selected_model, SentenceTransformer):
             # Encode query and documents
             query_emb = selected_model.encode(request.query, convert_to_tensor=True)
             doc_embs = selected_model.encode(request.documents, convert_to_tensor=True)
 
             # Calculate cosine similarity scores
             scores = cos_sim(query_emb, doc_embs)[0].cpu().tolist()
+
+            # Create results with original indices
+            results = [
+                {
+                    "index": i,
+                    "document": doc,
+                    "relevance_score": float(score)
+                }
+                for i, (doc, score) in enumerate(zip(request.documents, scores))
+            ]
+
+            # Sort by relevance (highest first)
+            results.sort(key=lambda x: x["relevance_score"], reverse=True)
+
+            # Apply top_k if specified
+            if request.top_k:
+                results = results[:request.top_k]
+
+            logger.info(f"Reranked {len(request.documents)} documents with {request.model} (bi-encoder), top score: {results[0]['relevance_score']:.4f}")
+
+        # Model2Vec or other embedding models
         else:
-            # For Model2Vec models (gemma-768d), use standard encode
             query_emb = selected_model.encode([request.query], show_progress_bar=False)[0]
             doc_embs = selected_model.encode(request.documents, show_progress_bar=False)
 
@@ -410,24 +501,24 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify
                 for doc_emb in doc_embs
             ]
 
-        # Create results with original indices
-        results = [
-            {
-                "index": i,
-                "document": doc,
-                "relevance_score": float(score)
-            }
-            for i, (doc, score) in enumerate(zip(request.documents, scores))
-        ]
+            # Create results with original indices
+            results = [
+                {
+                    "index": i,
+                    "document": doc,
+                    "relevance_score": float(score)
+                }
+                for i, (doc, score) in enumerate(zip(request.documents, scores))
+            ]
 
-        # Sort by relevance (highest first)
-        results.sort(key=lambda x: x["relevance_score"], reverse=True)
+            # Sort by relevance (highest first)
+            results.sort(key=lambda x: x["relevance_score"], reverse=True)
 
-        # Apply top_k if specified
-        if request.top_k:
-            results = results[:request.top_k]
+            # Apply top_k if specified
+            if request.top_k:
+                results = results[:request.top_k]
 
-        logger.info(f"Reranked {len(request.documents)} documents with {request.model}, top score: {results[0]['relevance_score']:.4f}")
+            logger.info(f"Reranked {len(request.documents)} documents with {request.model} (embedding), top score: {results[0]['relevance_score']:.4f}")
 
         return {
             "model": request.model,

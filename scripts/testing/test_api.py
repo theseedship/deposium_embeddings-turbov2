@@ -65,8 +65,8 @@ print(f"Model: {result['model']}")
 print(f"Embeddings shape: {len(result['embeddings'])} x {len(result['embeddings'][0])}")
 print()
 
-# Test 7: Reranking with qwen3-rerank
-print("7. Testing POST /api/rerank with qwen3-rerank")
+# Test 7: Reranking with qwen3-rerank (bi-encoder)
+print("7. Testing POST /api/rerank with qwen3-rerank (bi-encoder)")
 response = requests.post(
     f"{API_URL}/api/rerank",
     json={
@@ -80,8 +80,31 @@ response = requests.post(
     }
 )
 result = response.json()
-print(f"Query: {result.get('query', 'N/A')}")
+print(f"Query: What is machine learning?")
 print(f"Results: {len(result.get('results', []))} documents ranked")
+if result.get('results'):
+    print(f"Top result: {result['results'][0].get('relevance_score', 0):.4f}")
+print()
+
+# Test 7b: Reranking with mxbai-rerank-v2 (cross-encoder - SOTA)
+print("7b. Testing POST /api/rerank with mxbai-rerank-v2 (cross-encoder SOTA)")
+response = requests.post(
+    f"{API_URL}/api/rerank",
+    json={
+        "model": "mxbai-rerank-v2",
+        "query": "What is machine learning?",
+        "documents": [
+            "Machine learning is a subset of AI",
+            "The weather is nice today",
+            "Deep learning uses neural networks"
+        ]
+    }
+)
+result = response.json()
+print(f"Query: What is machine learning?")
+print(f"Results: {len(result.get('results', []))} documents ranked")
+if result.get('results'):
+    print(f"Top result: {result['results'][0].get('relevance_score', 0):.4f}")
 print()
 
 # Test 8: MXBAI-Embed-2D Full (24 layers, 1024D)

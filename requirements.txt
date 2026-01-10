@@ -34,3 +34,8 @@ onnxruntime==1.23.2  # Requires numpy<2.0 (incompatible with NumPy 2.x)
 # Docs: https://openbench.dev/installation
 openbench>=0.1.0
 
+# Mixedbread Reranker (SOTA cross-encoder, 100+ languages)
+# Models: mxbai-rerank-base-v2 (0.5B), mxbai-rerank-large-v2 (2B)
+# Docs: https://github.com/mixedbread-ai/mxbai-rerank
+mxbai-rerank>=0.1.0
+
