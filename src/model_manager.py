@@ -136,12 +136,15 @@ class OnnxEmbeddingModel:
 class ModelConfig:
     """Configuration for a model."""
     name: str
-    type: str  # "model2vec", "sentence_transformer"
+    type: str  # "model2vec", "sentence_transformer", "sentence_transformer_2d"
     path: Optional[str] = None  # Local path
     hub_id: Optional[str] = None  # HuggingFace ID
     priority: int = 0  # Higher = kept in memory longer
     estimated_vram_mb: int = 500  # Estimated VRAM usage
     device: str = "cuda"  # Device to load on
+    # 2D Matryoshka options (for adaptive layer models)
+    truncate_layers: Optional[int] = None  # Number of layers to use (None = all)
+    truncate_dims: Optional[int] = None  # Embedding dimensions to keep (None = all)
 
 
 class ModelManager:
@@ -245,6 +248,48 @@ class ModelManager:
             priority=1,  # Equal priority for all models
             estimated_vram_mb=0,  # No additional VRAM (alias)
             device=self.device
+        )
+
+        # ============================================================
+        # MXBAI-Embed-2D Models (2D Matryoshka - adaptive layer speedup)
+        # https://huggingface.co/mixedbread-ai/mxbai-embed-2d-large-v1
+        # 335M params, 1024D, 24 layers, English-only, Apache 2.0
+        # ============================================================
+
+        # MXBAI-Embed-2D Full (24 layers, 1024D - maximum quality)
+        self.configs["mxbai-embed-2d"] = ModelConfig(
+            name="mxbai-embed-2d",
+            type="sentence_transformer_2d",
+            hub_id=os.getenv("HF_MODEL_MXBAI_2D", "mixedbread-ai/mxbai-embed-2d-large-v1"),
+            priority=1,
+            estimated_vram_mb=800,
+            device=self.device,
+            truncate_layers=None,  # Use all 24 layers
+            truncate_dims=None  # Use full 1024D
+        )
+
+        # MXBAI-Embed-2D Fast (12 layers, 768D - ~2x speedup, ~15% quality loss)
+        self.configs["mxbai-embed-2d-fast"] = ModelConfig(
+            name="mxbai-embed-2d-fast",
+            type="sentence_transformer_2d",
+            hub_id=os.getenv("HF_MODEL_MXBAI_2D", "mixedbread-ai/mxbai-embed-2d-large-v1"),
+            priority=1,
+            estimated_vram_mb=400,  # Less VRAM with fewer layers
+            device=self.device,
+            truncate_layers=12,  # Use 12 of 24 layers
+            truncate_dims=768  # Truncate to 768D
+        )
+
+        # MXBAI-Embed-2D Turbo (6 layers, 512D - ~4x speedup, ~20% quality loss)
+        self.configs["mxbai-embed-2d-turbo"] = ModelConfig(
+            name="mxbai-embed-2d-turbo",
+            type="sentence_transformer_2d",
+            hub_id=os.getenv("HF_MODEL_MXBAI_2D", "mixedbread-ai/mxbai-embed-2d-large-v1"),
+            priority=1,
+            estimated_vram_mb=250,  # Even less VRAM
+            device=self.device,
+            truncate_layers=6,  # Use 6 of 24 layers
+            truncate_dims=512  # Truncate to 512D
         )
         
     def get_vram_usage_mb(self) -> Tuple[int, int]:
@@ -590,7 +635,36 @@ class ModelManager:
                         logger.info(f"ℹ️  {name} using PyTorch SDPA (Flash Attention backend if available)")
                 except:
                     pass
-                
+
+            elif config.type == "sentence_transformer_2d":
+                # Load 2D Matryoshka SentenceTransformer (supports layer truncation)
+                # https://huggingface.co/mixedbread-ai/mxbai-embed-2d-large-v1
+                if SentenceTransformer is None:
+                    raise ImportError("sentence-transformers not installed")
+
+                logger.info(f"Loading 2D Matryoshka model {name}...")
+                model = SentenceTransformer(
+                    config.hub_id,
+                    trust_remote_code=True,
+                    device=config.device
+                )
+
+                # Apply layer truncation if specified
+                if config.truncate_layers is not None:
+                    original_layers = self._get_model_layer_count(model)
+                    if original_layers and config.truncate_layers < original_layers:
+                        self._truncate_model_layers(model, config.truncate_layers)
+                        logger.info(f"✅ {name} truncated from {original_layers} to {config.truncate_layers} layers (~{original_layers/config.truncate_layers:.1f}x speedup)")
+                    else:
+                        logger.info(f"✅ {name} loaded with all {original_layers} layers")
+                else:
+                    logger.info(f"✅ {name} loaded (2D Matryoshka, full layers)")
+
+                # Store truncate_dims for use during encoding
+                if config.truncate_dims:
+                    model._truncate_dims = config.truncate_dims
+                    logger.info(f"   Embeddings will be truncated to {config.truncate_dims}D")
+
             else:
                 raise ValueError(f"Unknown model type: {config.type}")
                 
@@ -646,6 +720,71 @@ class ModelManager:
             except Exception as e:
                 logger.warning(f"Could not preload {name}: {e}")
                 
+    def _get_model_layer_count(self, model) -> Optional[int]:
+        """
+        Get the number of transformer layers in a SentenceTransformer model.
+
+        Args:
+            model: SentenceTransformer model
+
+        Returns:
+            Number of layers, or None if not determinable
+        """
+        try:
+            # SentenceTransformer structure: model[0] is the Transformer module
+            if hasattr(model, '__getitem__') and hasattr(model[0], 'auto_model'):
+                auto_model = model[0].auto_model
+
+                # Try different encoder structures
+                if hasattr(auto_model, 'encoder') and hasattr(auto_model.encoder, 'layer'):
+                    return len(auto_model.encoder.layer)
+                elif hasattr(auto_model, 'layers'):
+                    return len(auto_model.layers)
+                elif hasattr(auto_model, 'transformer') and hasattr(auto_model.transformer, 'layer'):
+                    return len(auto_model.transformer.layer)
+
+            return None
+        except Exception as e:
+            logger.warning(f"Could not determine layer count: {e}")
+            return None
+
+    def _truncate_model_layers(self, model, num_layers: int):
+        """
+        Truncate a SentenceTransformer model to use fewer transformer layers.
+        This enables 2D Matryoshka speedup for models trained with AdaptiveLayerLoss.
+
+        Args:
+            model: SentenceTransformer model
+            num_layers: Number of layers to keep
+        """
+        try:
+            if hasattr(model, '__getitem__') and hasattr(model[0], 'auto_model'):
+                auto_model = model[0].auto_model
+
+                # Try different encoder structures (BERT, XLM-R, etc.)
+                if hasattr(auto_model, 'encoder') and hasattr(auto_model.encoder, 'layer'):
+                    original = len(auto_model.encoder.layer)
+                    auto_model.encoder.layer = auto_model.encoder.layer[:num_layers]
+                    logger.info(f"Truncated encoder.layer: {original} -> {num_layers}")
+                    return
+
+                elif hasattr(auto_model, 'layers'):
+                    original = len(auto_model.layers)
+                    auto_model.layers = auto_model.layers[:num_layers]
+                    logger.info(f"Truncated layers: {original} -> {num_layers}")
+                    return
+
+                elif hasattr(auto_model, 'transformer') and hasattr(auto_model.transformer, 'layer'):
+                    original = len(auto_model.transformer.layer)
+                    auto_model.transformer.layer = auto_model.transformer.layer[:num_layers]
+                    logger.info(f"Truncated transformer.layer: {original} -> {num_layers}")
+                    return
+
+            logger.warning("Could not truncate model layers - unknown architecture")
+
+        except Exception as e:
+            logger.error(f"Failed to truncate model layers: {e}")
+
     def cleanup_inactive_models(self, timeout_seconds: int = None):
         """
         Unload models that haven't been used for timeout_seconds.

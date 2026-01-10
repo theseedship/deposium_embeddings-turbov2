@@ -84,6 +84,39 @@ print(f"Query: {result.get('query', 'N/A')}")
 print(f"Results: {len(result.get('results', []))} documents ranked")
 print()
 
+# Test 8: MXBAI-Embed-2D Full (24 layers, 1024D)
+print("8. Testing POST /api/embed with mxbai-embed-2d (full, 24 layers)")
+response = requests.post(
+    f"{API_URL}/api/embed",
+    json={"model": "mxbai-embed-2d", "input": "Hello world in English"}
+)
+result = response.json()
+print(f"Model: {result['model']}")
+print(f"Embeddings shape: {len(result['embeddings'])} x {len(result['embeddings'][0])}")
+print()
+
+# Test 9: MXBAI-Embed-2D Fast (12 layers, 768D - ~2x speedup)
+print("9. Testing POST /api/embed with mxbai-embed-2d-fast (12 layers, ~2x speedup)")
+response = requests.post(
+    f"{API_URL}/api/embed",
+    json={"model": "mxbai-embed-2d-fast", "input": "Hello world in English"}
+)
+result = response.json()
+print(f"Model: {result['model']}")
+print(f"Embeddings shape: {len(result['embeddings'])} x {len(result['embeddings'][0])}")
+print()
+
+# Test 10: MXBAI-Embed-2D Turbo (6 layers, 512D - ~4x speedup)
+print("10. Testing POST /api/embed with mxbai-embed-2d-turbo (6 layers, ~4x speedup)")
+response = requests.post(
+    f"{API_URL}/api/embed",
+    json={"model": "mxbai-embed-2d-turbo", "input": "Hello world in English"}
+)
+result = response.json()
+print(f"Model: {result['model']}")
+print(f"Embeddings shape: {len(result['embeddings'])} x {len(result['embeddings'][0])}")
+print()
+
 print("="*60)
 print("ALL TESTS COMPLETED!")
 print("="*60)

@@ -334,11 +334,20 @@ async def create_embedding(request: EmbedRequest, api_key: str = Depends(verify_
 
         # Generate embeddings (Model2Vec or SentenceTransformer)
         embeddings = selected_model.encode(texts, show_progress_bar=False)
+
+        # Handle 2D Matryoshka dimension truncation
+        # Models like mxbai-embed-2d-fast/turbo have _truncate_dims attribute
+        truncate_dims = getattr(selected_model, '_truncate_dims', None)
+        if truncate_dims:
+            # Truncate embeddings to specified dimensions
+            embeddings = embeddings[:, :truncate_dims]
+
         embeddings_list = [emb.tolist() for emb in embeddings]
 
         # Log dimensions for debugging
         dims = len(embeddings_list[0]) if embeddings_list else 0
-        logger.info(f"Generated {len(embeddings_list)} embeddings with {dims}D using {request.model}")
+        truncation_info = f" (truncated to {truncate_dims}D)" if truncate_dims else ""
+        logger.info(f"Generated {len(embeddings_list)} embeddings with {dims}D using {request.model}{truncation_info}")
 
         return {
             "model": request.model,
