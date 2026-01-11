@@ -471,11 +471,11 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify
             )
 
             # Convert to our response format
-            # mxbai-rerank returns RankResult objects with .index, .text, .score attributes
+            # mxbai-rerank returns RankResult objects with .index, .document, .score attributes
             results = [
                 {
                     "index": item.index,
-                    "document": item.text,
+                    "document": item.document,
                     "relevance_score": float(item.score)
                 }
                 for i, item in enumerate(ranked_results)
