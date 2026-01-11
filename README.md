@@ -1,94 +1,49 @@
-# Deposium Embeddings - Multi-Model Service (v11.0.0)
+# Deposium Embeddings TurboV2
 
-Ultra-fast embeddings service with **multi-model support** for production deployments.
+Ultra-fast embeddings, reranking, and vision-language service for production deployments.
 
-## 🚀 Features
+## Features
 
-- 🔥 **M2V-BGE-M3-1024D** (PRIMARY) - Distilled from BGE-M3, 3x energy efficient
-- ⚡ **BGE-M3-ONNX** (CPU) - INT8 quantized for high quality on CPU
-- 📚 **Gemma-768D** (LEGACY) - Multilingual support
-- 🏆 **Qwen3 Reranking** - Optimized FP32 reranking (242ms)
-- 📄 **Document Complexity Classifier** - Binary routing (LOW→OCR, HIGH→VLM)
-- **500-1000x faster** than full LLMs
+- **10+ Models** - Embeddings, reranking, document classification, OCR
+- **500-1000x faster** than full LLMs for embeddings
 - **Ollama-compatible API** - drop-in replacement
+- **Dynamic VRAM Management** - lazy loading, LRU cache, auto-unloading
+- **4-bit Quantization** - NF4 for rerankers (70% VRAM reduction)
 - **FastAPI** backend with health checks
 
-## 📊 Available Models
+---
 
-### 🔥 M2V-BGE-M3-1024D (PRIMARY)
-- **Quality:** MTEB STS ~0.58
-- **Size:** ~21MB
-- **Dimensions:** 1024D
-- **Speed:** 14k texts/s (3x more energy efficient)
-- **Base:** BAAI/bge-m3 (distilled via Model2Vec)
-- **Use case:** Primary model - RAG, semantic search, high throughput
+## Available Models
 
-### ⚡ BGE-M3-ONNX (CPU FALLBACK)
-- **Quality:** MTEB ~0.60 (high quality)
-- **Size:** ~150MB (INT8 quantized)
-- **Dimensions:** 1024D
-- **Speed:** Optimized for CPU inference
-- **Base:** BAAI/bge-m3 (ONNX INT8)
-- **Use case:** High quality embeddings on CPU-only deployments
+### Embeddings
 
-### 📚 Gemma-768D (LEGACY)
-- **Quality:** 0.551 overall
-- **Multilingual:** 0.737 (best for cross-language)
-- **Size:** 400MB
-- **Dimensions:** 768D
-- **Speed:** 500-700x faster than full Gemma
-- **Base:** google/embeddinggemma-300m
-- **Use case:** Legacy - multilingual support, cross-language search
+| Model | Type | Dimensions | Quality | Speed | Use Case |
+|-------|------|------------|---------|-------|----------|
+| **m2v-bge-m3-1024d** | Model2Vec | 1024D | MTEB ~0.58 | 14k texts/s | PRIMARY - RAG, semantic search |
+| **bge-m3-onnx** | ONNX INT8 | 1024D | MTEB ~0.60 | CPU optimized | High quality on CPU |
+| **gemma-768d** | Model2Vec | 768D | 0.55 overall | 500x faster | LEGACY - multilingual |
+| **qwen3-embed** | SentenceTransformer | 1024D | High | Float16 | Embeddings + reranking |
+| **mxbai-embed-2d** | 2D Matryoshka | 1024D (24 layers) | Best | Full | Maximum quality |
+| **mxbai-embed-2d-fast** | 2D Matryoshka | 768D (12 layers) | -15% | 2x faster | Balanced |
+| **mxbai-embed-2d-turbo** | 2D Matryoshka | 512D (6 layers) | -20% | 4x faster | Speed priority |
 
-## 🐳 Docker Usage
+### Reranking
 
-### Build
-```bash
-docker build -t deposium-embeddings-turbov2 .
-```
+| Model | Type | Languages | BEIR Score | VRAM | Use Case |
+|-------|------|-----------|------------|------|----------|
+| **mxbai-rerank-v2** | Cross-encoder | 100+ | 55.57 | ~250MB (4-bit) | SOTA reranking |
+| **qwen3-rerank** | Bi-encoder | Multi | High | ~1.2GB | Reranking alias |
 
-### Run
-```bash
-docker run -p 11435:11435 deposium-embeddings-turbov2
-```
+### Vision-Language
 
-### Test
-```bash
-# Health check
-curl http://localhost:11435/health
+| Model | Type | Size | Latency | Use Case |
+|-------|------|------|---------|----------|
+| **vl-classifier** | ResNet18 ONNX | 11MB | ~10ms | Document complexity routing |
+| **lfm25-vl** | LFM2.5-VL-1.6B | 1.6B params | ~10-15s | Document OCR, text extraction |
 
-# List models
-curl http://localhost:11435/api/tags
+---
 
-# Generate embedding with M2V-BGE-M3-1024D (PRIMARY)
-curl -X POST http://localhost:11435/api/embed \
-  -H "Content-Type: application/json" \
-  -d '{"model":"m2v-bge-m3-1024d","input":"Explain how neural networks work"}'
-
-# Generate embedding with BGE-M3-ONNX (CPU fallback)
-curl -X POST http://localhost:11435/api/embed \
-  -H "Content-Type: application/json" \
-  -d '{"model":"bge-m3-onnx","input":"Machine learning et intelligence artificielle"}'
-
-# Reranking with Qwen3 (FP32 optimized)
-curl -X POST http://localhost:11435/api/rerank \
-  -H "Content-Type: application/json" \
-  -d '{"model":"qwen3-rerank","query":"machine learning","documents":["AI and ML","cooking recipes","deep learning"]}'
-
-# Document complexity classification (file upload)
-curl -X POST http://localhost:11435/api/classify \
-  -F "file=@document.jpg"
-
-# Document complexity classification (base64 JSON)
-curl -X POST http://localhost:11435/api/classify \
-  -H "Content-Type: application/json" \
-  -d '{"image":"data:image/jpeg;base64,/9j/4AAQSkZJRg..."}'
-```
-
-## 🔌 API Endpoints
-
-### `GET /`
-Service info and status
+## API Endpoints
 
 ### `GET /health`
 Health check endpoint
@@ -97,46 +52,59 @@ Health check endpoint
 List available models (Ollama-compatible)
 
 ### `POST /api/embed`
-Generate embeddings with model selection
+Generate embeddings
 
-**Request:**
-```json
-{
-  "model": "m2v-bge-m3-1024d",  // or "bge-m3-onnx", "gemma-768d"
-  "input": "Explain how neural networks work"
-}
+```bash
+curl -X POST http://localhost:11435/api/embed \
+  -H "Content-Type: application/json" \
+  -d '{"model":"m2v-bge-m3-1024d","input":"Your text here"}'
 ```
 
-**Response (m2v-bge-m3-1024d - 1024D):**
+**Response:**
 ```json
 {
   "model": "m2v-bge-m3-1024d",
-  "embeddings": [[0.123, -0.456, ...]]  // 1024 dimensions
+  "embeddings": [[0.123, -0.456, ...]]
 }
 ```
 
-**Response (gemma-768d - 768D):**
+### `POST /api/rerank`
+Rerank documents by relevance
+
+```bash
+curl -X POST http://localhost:11435/api/rerank \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "mxbai-rerank-v2",
+    "query": "machine learning",
+    "documents": ["AI and ML", "cooking recipes", "deep learning"]
+  }'
+```
+
+**Response:**
 ```json
 {
-  "model": "gemma-768d",
-  "embeddings": [[0.123, -0.456, ...]]  // 768 dimensions
+  "model": "mxbai-rerank-v2",
+  "results": [
+    {"index": 0, "document": "AI and ML", "relevance_score": 5.18},
+    {"index": 2, "document": "deep learning", "relevance_score": 2.94},
+    {"index": 1, "document": "cooking recipes", "relevance_score": -3.15}
+  ]
 }
 ```
 
 ### `POST /api/classify`
-Classify document complexity for intelligent routing
+Document complexity classification
 
-**Method 1: File Upload**
 ```bash
+# File upload
 curl -X POST http://localhost:11435/api/classify \
   -F "file=@document.jpg"
-```
 
-**Method 2: Base64 JSON**
-```json
-{
-  "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
-}
+# Base64 JSON
+curl -X POST http://localhost:11435/api/classify \
+  -H "Content-Type: application/json" \
+  -d '{"image":"data:image/jpeg;base64,/9j/4AAQ..."}'
 ```
 
 **Response:**
@@ -145,222 +113,164 @@ curl -X POST http://localhost:11435/api/classify \
   "class_name": "HIGH",
   "class_id": 1,
   "confidence": 0.982,
-  "probabilities": {
-    "LOW": 0.018,
-    "HIGH": 0.982
-  },
+  "probabilities": {"LOW": 0.018, "HIGH": 0.982},
   "routing_decision": "Complex document - Route to VLM reasoning pipeline (~2000ms)",
   "latency_ms": 9.4
 }
 ```
 
 **Classification:**
-- `LOW` - Simple documents (plain text, simple forms) → Route to OCR (~100ms)
-- `HIGH` - Complex documents (charts, diagrams, tables) → Route to VLM reasoning (~2000ms)
+- `LOW` - Simple documents (plain text) -> Route to OCR (~100ms)
+- `HIGH` - Complex documents (charts, tables, diagrams) -> Route to VLM (~2000ms)
 
-**Model:** ResNet18 ONNX INT8 quantized (11MB)
-**Performance:** 93% accuracy, 100% HIGH recall, ~10ms latency
-**Lazy loading:** Model loads only on first request to save RAM
+### `POST /api/vision`
+Document OCR with LFM2.5-VL
 
-## 🔧 Integration with N8N
+```bash
+curl -X POST http://localhost:11435/api/vision \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": "data:image/jpeg;base64,/9j/4AAQ...",
+    "model": "lfm25-vl",
+    "prompt": "Extract all text from this document"
+  }'
+```
 
-### M2V-BGE-M3-1024D (PRIMARY)
-Configure N8N Ollama credentials:
-- **Base URL:** `http://deposium-embeddings-turbov2:11435`
-- **Model Name:** `m2v-bge-m3-1024d`
-- **Use case:** RAG, semantic search, high throughput
+**Response:**
+```json
+{
+  "model": "lfm25-vl",
+  "response": "The document contains...",
+  "latency_ms": 12500
+}
+```
 
-### BGE-M3-ONNX (CPU FALLBACK)
-Configure N8N Ollama credentials:
-- **Base URL:** `http://deposium-embeddings-turbov2:11435`
-- **Model Name:** `bge-m3-onnx`
-- **Use case:** High quality embeddings on CPU
+---
 
-### Document Complexity Classifier
-Configure N8N HTTP Request node:
-- **Method:** POST
-- **URL:** `http://deposium-embeddings-turbov2:11435/api/classify`
-- **Send Binary Data:** Enabled
-- **Use case:** Intelligent routing - LOW complexity to OCR, HIGH complexity to VLM
+## Docker Usage
 
-**Workflow Example:**
+### Build & Run
+```bash
+docker build -t deposium-embeddings-turbov2 .
+docker run -p 11435:11435 --gpus all deposium-embeddings-turbov2
+```
+
+### Docker Compose
+```yaml
+services:
+  embeddings-turbov2:
+    build: ./deposium_embeddings-turbov2
+    ports:
+      - "11435:11435"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+```
+
+---
+
+## Memory Optimizations
+
+### Dynamic VRAM Management
+- **Lazy loading**: Models load only on first request
+- **LRU cache**: Least recently used models unloaded first
+- **Auto-unloading**: Frees VRAM when limit exceeded (5GB default)
+- **Priority system**: Important models stay in memory
+
+### 4-bit Quantization (NF4)
+- **mxbai-rerank-v2**: 1GB -> ~250MB (75% reduction)
+- **qwen3-embed**: 4GB -> ~1.2GB (70% reduction)
+
+### Memory Usage Breakdown
+| Model | VRAM | Device |
+|-------|------|--------|
+| m2v-bge-m3-1024d | ~0MB | CPU (Model2Vec) |
+| bge-m3-onnx | ~0MB | CPU (ONNX) |
+| gemma-768d | ~400MB | GPU |
+| qwen3-embed/rerank | ~1.2GB | GPU (Float16) |
+| mxbai-embed-2d | ~800MB | GPU |
+| mxbai-rerank-v2 | ~250MB | GPU (4-bit NF4) |
+| lfm25-vl | ~3.2GB | GPU (BF16) |
+| vl-classifier | ~0MB | CPU (ONNX) |
+
+**Total**: ~2-3GB VRAM for typical usage (fits in 6GB GPU)
+
+---
+
+## N8N Integration
+
+### Ollama Credentials
+- **Base URL**: `http://deposium-embeddings-turbov2:11435`
+- **Model Name**: `m2v-bge-m3-1024d` (or any available model)
+
+### Workflow Example (Document Routing)
 ```
 1. [Trigger] Webhook receives document
 2. [HTTP Request] POST to /api/classify
 3. [Switch] Route based on class_name
-   ├─ LOW → [Stirling PDF] Simple OCR (~100ms)
-   └─ HIGH → [LLM Node] VLM reasoning (~2000ms)
+   +-- LOW -> [Stirling PDF] Simple OCR (~100ms)
+   +-- HIGH -> [HTTP Request] /api/vision with lfm25-vl (~10s)
 4. [Return] Send response
 ```
 
-## 📈 Performance
+---
 
-### M2V-BGE-M3-1024D (PRIMARY)
-- **Quality:** MTEB STS ~0.58
-- **Throughput:** ~14k texts/s
-- **Energy:** 3x more efficient than transformer models
-- **Memory Usage:** ~50MB RAM
-- **Model Size:** ~21MB
+## Benchmarks
 
-### BGE-M3-ONNX (CPU)
-- **Quality:** MTEB ~0.60 (high quality)
-- **Throughput:** Optimized for CPU batches
-- **Memory Usage:** ~200MB RAM
-- **Model Size:** ~150MB (INT8)
+### VL Classifier (ResNet18 distilled from CLIP)
+| Metric | Value |
+|--------|-------|
+| Accuracy (test) | 100% (75/75) |
+| HIGH Recall | 100% |
+| LOW Recall | 100% |
+| Model Size | 11.10 MB |
+| Latency | 36-60ms |
+| vs Old CLIP | 97% smaller, 2.5x faster |
 
-### Gemma-768D (LEGACY)
-- **Overall Quality:** 0.551
-- **Multilingual:** 0.737 (best for cross-language)
-- **Inference Speed:** ~500-700x faster than full Gemma
-- **Memory Usage:** ~200-300MB RAM
-- **Model Size:** 400MB
+### mxbai-rerank-v2 (SOTA Cross-Encoder)
+| Benchmark | Score |
+|-----------|-------|
+| BEIR Average | 55.57 |
+| Languages | 100+ |
+| Quantization | 4-bit NF4 |
 
-### CPU Optimization
-- Perfect for Railway 32 vCPU deployment
-- Environment optimizations (OMP, jemalloc, KMP)
-- FP32 models for best precision on vCPU
+### mxbai-embed-2d (2D Matryoshka)
+| Variant | Layers | Dimensions | Quality vs Full |
+|---------|--------|------------|-----------------|
+| Full | 24 | 1024D | 100% |
+| Fast | 12 | 768D | ~85% |
+| Turbo | 6 | 512D | ~80% |
 
-### 💾 Memory Optimizations (NEW)
-- **Dynamic VRAM Management**: Lazy loading with LRU cache
-- **Float16 Precision**: Qwen3-Reranker reduced from 4GB to ~1.2GB (70% reduction)
-- **Auto-unloading**: Frees VRAM when limit exceeded (5GB default)
-- **Priority System**: Keeps important models in memory
-- **Total VRAM Usage**: ~2.1GB for all models (fits in 6GB GPU)
+---
 
-#### Memory Usage Breakdown:
-- **M2V-BGE-M3-1024D**: ~0MB GPU (Model2Vec runs on CPU)
-- **BGE-M3-ONNX**: ~0MB GPU (ONNX runs on CPU)
-- **Gemma-768D**: ~400MB GPU when loaded
-- **Qwen3-Reranker**: ~1.2GB GPU (float16 optimized)
-- **Classifier**: ~0MB GPU (ONNX runs on CPU)
-
-## 🚀 Railway Deployment
+## Environment Variables
 
 ```bash
-railway up
+# Model HuggingFace IDs (optional overrides)
+HF_MODEL_M2V_BGE_M3=tss-deposium/m2v-bge-m3-1024d
+HF_MODEL_BGE_M3_ONNX=gpahal/bge-m3-onnx-int8
+HF_MODEL_GEMMA_768D=tss-deposium/gemma-deposium-768d
+HF_MODEL_QWEN3_EMBED=Qwen/Qwen3-Embedding-0.6B
+HF_MODEL_MXBAI_2D=mixedbread-ai/mxbai-embed-2d-large-v1
+HF_MODEL_MXBAI_RERANK=mixedbread-ai/mxbai-rerank-base-v2
+HF_MODEL_LFM25_VL=LiquidAI/LFM2.5-VL-1.6B
+
+# Server config
+PORT=11435
+HOST=0.0.0.0
 ```
 
-Environment variables:
-- `PORT=11435` (auto-detected)
-- `HOST=0.0.0.0` (auto-configured)
+---
 
-## 🎯 OpenBench Benchmarking API - ✅ NEW (Sprint 62)
-
-Standardized LLM benchmarking endpoints for quality evaluation.
-
-> **⚠️ Preview Feature**: When `openbench` package is not installed, endpoints return **simulated benchmark scores** for API testing. Install `pip install openbench` for real LLM evaluation.
-
-### Endpoints
-
-#### `GET /api/benchmarks`
-List available benchmark categories and providers.
-
-**Response:**
-```json
-{
-  "categories": {
-    "knowledge": { "name": "Knowledge", "description": "General knowledge", "benchmarks": ["MMLU", "TriviaQA"] },
-    "coding": { "name": "Coding", "description": "Code generation", "benchmarks": ["HumanEval", "MBPP"] },
-    "math": { "name": "Math", "description": "Mathematical reasoning", "benchmarks": ["GSM8K", "MATH"] },
-    "reasoning": { "name": "Reasoning", "description": "Logic and deduction", "benchmarks": ["ARC", "HellaSwag"] },
-    "cybersecurity": { "name": "Cybersecurity", "description": "Security tasks", "benchmarks": [] },
-    "search": { "name": "Search", "description": "Retrieval quality", "benchmarks": [] }
-  },
-  "providers": ["groq", "openai", "anthropic"],
-  "default_provider": "groq",
-  "default_model": "llama-3.1-8b-instant"
-}
-```
-
-#### `POST /api/benchmarks/run`
-Run a standardized benchmark.
-
-**Request:**
-```json
-{
-  "category": "search",
-  "provider": "groq",
-  "model": "llama-3.1-8b-instant",
-  "sample_limit": 100
-}
-```
-
-**Response:**
-```json
-{
-  "category": "search",
-  "provider": "groq",
-  "model": "llama-3.1-8b-instant",
-  "score": 0.847,
-  "metrics": {
-    "precision": 0.82,
-    "recall": 0.87,
-    "f1": 0.845
-  },
-  "samples_evaluated": 100,
-  "duration_seconds": 45.3,
-  "timestamp": "2025-12-21T10:30:00Z",
-  "errors": []
-}
-```
-
-#### `POST /api/benchmarks/corpus-eval`
-Evaluate a custom corpus for retrieval quality.
-
-**Request:**
-```json
-{
-  "corpus_data": [
-    {
-      "query": "What is machine learning?",
-      "relevant_docs": ["Machine learning is a subset of AI..."],
-      "context": "Technical documentation"
-    }
-  ],
-  "provider": "groq",
-  "model": "llama-3.1-8b-instant",
-  "sample_limit": 100
-}
-```
-
-**Response:**
-```json
-{
-  "category": "search",
-  "provider": "groq",
-  "model": "llama-3.1-8b-instant",
-  "score": 0.785,
-  "metrics": {
-    "retrieval_precision": 0.76,
-    "semantic_similarity": 0.81
-  },
-  "samples_evaluated": 50,
-  "duration_seconds": 23.1,
-  "timestamp": "2025-12-21T10:35:00Z",
-  "errors": []
-}
-```
-
-### Implementation
-
-**Files:**
-- `src/benchmarks/__init__.py` - Module init
-- `src/benchmarks/openbench_runner.py` - OpenBenchRunner class (469 lines)
-- `src/main.py` - REST endpoints (lines 520-656)
-
-**Dependencies:**
-- `openbench>=0.1.0` - OpenBench framework (optional, falls back to simulated results)
-
-**Integration with deposium_MCPs:**
-```
-deposium_MCPs (MCP tools) ──REST──► deposium_embeddings-turbov2 (OpenBench)
-                                    └── /api/benchmarks/*
-```
-
-## 📚 References
+## References
 
 - [CHANGELOG](CHANGELOG.md) - Release history
 - [Model2Vec](https://github.com/MinishLab/model2vec)
-- [HuggingFace Model](https://huggingface.co/C10X/Qwen3-Embedding-TurboX.v2)
+- [mxbai-embed-2d](https://huggingface.co/mixedbread-ai/mxbai-embed-2d-large-v1)
+- [mxbai-rerank-v2](https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v2)
+- [LFM2.5-VL](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B)
 - [Ollama API Docs](https://github.com/ollama/ollama/blob/main/docs/api.md)
-- [OpenBench](https://openbench.dev) - LLM Benchmarking Framework
