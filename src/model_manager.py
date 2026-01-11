@@ -326,7 +326,23 @@ class ModelManager:
             device=self.device,
             quantize_4bit=True  # Enable 4-bit NF4 quantization
         )
-        
+
+        # ============================================================
+        # MXBAI-Rerank-XSmall (Lightweight alternative, ~40% faster)
+        # https://huggingface.co/mixedbread-ai/mxbai-rerank-xsmall-v1
+        # 278M params, BEIR ~52, 100+ languages
+        # Same quality per-param but faster inference
+        # ============================================================
+        self.configs["mxbai-rerank-xsmall"] = ModelConfig(
+            name="mxbai-rerank-xsmall",
+            type="mxbai_reranker",
+            hub_id=os.getenv("HF_MODEL_MXBAI_RERANK_XSMALL", "mixedbread-ai/mxbai-rerank-xsmall-v1"),
+            priority=1,
+            estimated_vram_mb=150,  # ~150MB with 4-bit quantization
+            device=self.device,
+            quantize_4bit=True  # Enable 4-bit NF4 quantization
+        )
+
     def get_vram_usage_mb(self) -> Tuple[int, int]:
         """
         Get current VRAM usage.
@@ -774,10 +790,19 @@ class ModelManager:
 
                 model = MxbaiRerankV2(config.hub_id, **model_kwargs)
 
-                if config.quantize_4bit and "quantization_config" in model_kwargs:
-                    logger.info(f"✅ {name} loaded with 4-bit NF4 quantization (~75% VRAM reduction)")
+                # Enhanced logging for GPU/CPU and quantization status
+                if "quantization_config" in model_kwargs:
+                    logger.info(f"✅ {name} loaded with 4-bit NF4 on CUDA (~75% VRAM reduction)")
+                    if torch.cuda.is_available():
+                        mem_mb = torch.cuda.memory_allocated() / 1024 / 1024
+                        logger.info(f"   VRAM allocated: {mem_mb:.0f}MB")
+                elif config.device == "cuda":
+                    logger.info(f"✅ {name} loaded on CUDA (float16, no quantization)")
+                    if torch.cuda.is_available():
+                        mem_mb = torch.cuda.memory_allocated() / 1024 / 1024
+                        logger.info(f"   VRAM allocated: {mem_mb:.0f}MB")
                 else:
-                    logger.info(f"✅ {name} loaded (MXBAI cross-encoder reranker)")
+                    logger.warning(f"⚠️ {name} loaded on CPU - inference will be slower")
 
             else:
                 raise ValueError(f"Unknown model type: {config.type}")

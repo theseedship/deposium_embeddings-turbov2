@@ -360,6 +360,13 @@ async def list_models():
             "details": "🏆 MXBAI-Rerank-V2 SOTA cross-encoder | BEIR 55.57 | 100+ languages | 4-bit NF4"
         },
         {
+            "name": "mxbai-rerank-xsmall",
+            "size": 150000000,  # ~150MB with 4-bit quantization
+            "digest": "mxbai-rerank-xsmall-v1-4bit",
+            "modified_at": "2026-01-11T00:00:00Z",
+            "details": "🚀 MXBAI-Rerank-XSmall | 278M params | ~40% faster | 100+ languages | 4-bit NF4"
+        },
+        {
             "name": "lfm25-vl",
             "size": 3200000000,  # ~3.2GB
             "digest": "lfm25-vl-1.6b",
@@ -428,6 +435,7 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify
 
     **Models:**
     - mxbai-rerank-v2: SOTA cross-encoder (BEIR 55.57, 100+ languages) - RECOMMENDED
+    - mxbai-rerank-xsmall: Lighter cross-encoder (~40% faster, 278M params)
     - qwen3-rerank: Bi-encoder with cosine similarity (faster, lower quality)
     - Embedding models: Can also use for reranking via cosine similarity
 

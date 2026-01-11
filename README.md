@@ -32,6 +32,7 @@ Ultra-fast embeddings, reranking, and vision-language service for production dep
 | Model | Type | Languages | BEIR Score | VRAM | Use Case |
 |-------|------|-----------|------------|------|----------|
 | **mxbai-rerank-v2** | Cross-encoder | 100+ | 55.57 | ~250MB (4-bit) | SOTA reranking |
+| **mxbai-rerank-xsmall** | Cross-encoder | 100+ | ~52 | ~150MB (4-bit) | Faster, lighter |
 | **qwen3-rerank** | Bi-encoder | Multi | High | ~1.2GB | Reranking alias |
 
 ### Vision-Language
@@ -183,6 +184,7 @@ services:
 
 ### 4-bit Quantization (NF4)
 - **mxbai-rerank-v2**: 1GB -> ~250MB (75% reduction)
+- **mxbai-rerank-xsmall**: 600MB -> ~150MB (75% reduction)
 - **qwen3-embed**: 4GB -> ~1.2GB (70% reduction)
 
 ### Memory Usage Breakdown
@@ -194,6 +196,7 @@ services:
 | qwen3-embed/rerank | ~1.2GB | GPU (Float16) |
 | mxbai-embed-2d | ~800MB | GPU |
 | mxbai-rerank-v2 | ~250MB | GPU (4-bit NF4) |
+| mxbai-rerank-xsmall | ~150MB | GPU (4-bit NF4) |
 | lfm25-vl | ~3.2GB | GPU (BF16) |
 | vl-classifier | ~0MB | CPU (ONNX) |
 
@@ -272,5 +275,6 @@ HOST=0.0.0.0
 - [Model2Vec](https://github.com/MinishLab/model2vec)
 - [mxbai-embed-2d](https://huggingface.co/mixedbread-ai/mxbai-embed-2d-large-v1)
 - [mxbai-rerank-v2](https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v2)
+- [mxbai-rerank-xsmall](https://huggingface.co/mixedbread-ai/mxbai-rerank-xsmall-v1)
 - [LFM2.5-VL](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B)
 - [Ollama API Docs](https://github.com/ollama/ollama/blob/main/docs/api.md)
