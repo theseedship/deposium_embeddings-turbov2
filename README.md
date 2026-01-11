@@ -31,8 +31,8 @@ Ultra-fast embeddings, reranking, and vision-language service for production dep
 
 | Model | Type | Languages | BEIR Score | VRAM | Use Case |
 |-------|------|-----------|------------|------|----------|
-| **mxbai-rerank-v2** | Cross-encoder | 100+ | 55.57 | ~250MB (4-bit) | SOTA reranking |
-| **mxbai-rerank-xsmall** | Cross-encoder | 100+ | ~52 | ~150MB (4-bit) | Faster, lighter |
+| **mxbai-rerank-v2** | Cross-encoder (Qwen2) | 100+ | 55.57 | ~250MB (4-bit) | SOTA reranking |
+| **mxbai-rerank-xsmall** | Cross-encoder (DeBERTa V1) | 100+ | ~50 | ~200MB | Fastest, lightweight |
 | **qwen3-rerank** | Bi-encoder | Multi | High | ~1.2GB | Reranking alias |
 
 ### Vision-Language
@@ -184,8 +184,9 @@ services:
 
 ### 4-bit Quantization (NF4)
 - **mxbai-rerank-v2**: 1GB -> ~250MB (75% reduction)
-- **mxbai-rerank-xsmall**: 600MB -> ~150MB (75% reduction)
 - **qwen3-embed**: 4GB -> ~1.2GB (70% reduction)
+
+Note: mxbai-rerank-xsmall (V1 DeBERTa) doesn't support 4-bit quantization but is already lightweight (~200MB).
 
 ### Memory Usage Breakdown
 | Model | VRAM | Device |

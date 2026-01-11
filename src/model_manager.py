@@ -328,19 +328,19 @@ class ModelManager:
         )
 
         # ============================================================
-        # MXBAI-Rerank-XSmall (Lightweight alternative, ~40% faster)
+        # MXBAI-Rerank-XSmall V1 (Lightweight DeBERTa-based, ~40% faster)
         # https://huggingface.co/mixedbread-ai/mxbai-rerank-xsmall-v1
-        # 278M params, BEIR ~52, 100+ languages
-        # Same quality per-param but faster inference
+        # 100M params, DeBERTa architecture (V1 - no 4-bit quantization)
+        # Fastest inference, good for high-throughput scenarios
         # ============================================================
         self.configs["mxbai-rerank-xsmall"] = ModelConfig(
             name="mxbai-rerank-xsmall",
-            type="mxbai_reranker",
+            type="mxbai_reranker_v1",  # V1 uses DeBERTa, not Qwen2
             hub_id=os.getenv("HF_MODEL_MXBAI_RERANK_XSMALL", "mixedbread-ai/mxbai-rerank-xsmall-v1"),
             priority=1,
-            estimated_vram_mb=150,  # ~150MB with 4-bit quantization
+            estimated_vram_mb=200,  # ~200MB (no quantization for V1)
             device=self.device,
-            quantize_4bit=True  # Enable 4-bit NF4 quantization
+            quantize_4bit=False  # V1 doesn't support bitsandbytes quantization
         )
 
     def get_vram_usage_mb(self) -> Tuple[int, int]:
@@ -803,6 +803,31 @@ class ModelManager:
                         logger.info(f"   VRAM allocated: {mem_mb:.0f}MB")
                 else:
                     logger.warning(f"⚠️ {name} loaded on CPU - inference will be slower")
+
+            elif config.type == "mxbai_reranker_v1":
+                # Load MXBAI Rerank V1 (DeBERTa-based, lighter alternative)
+                # V1 models don't support bitsandbytes quantization
+                try:
+                    from mxbai_rerank import MxbaiRerankV1
+                except ImportError:
+                    raise ImportError("mxbai-rerank not installed. Install with: pip install mxbai-rerank")
+
+                logger.info(f"Loading MXBAI Reranker V1 {name}...")
+
+                # V1 uses simpler kwargs (no quantization support)
+                model_kwargs = {
+                    "device": config.device,
+                }
+
+                model = MxbaiRerankV1(config.hub_id, **model_kwargs)
+
+                if config.device == "cuda":
+                    logger.info(f"✅ {name} loaded on CUDA (V1 DeBERTa)")
+                    if torch.cuda.is_available():
+                        mem_mb = torch.cuda.memory_allocated() / 1024 / 1024
+                        logger.info(f"   VRAM allocated: {mem_mb:.0f}MB")
+                else:
+                    logger.info(f"✅ {name} loaded on CPU (V1 DeBERTa - lightweight)")
 
             else:
                 raise ValueError(f"Unknown model type: {config.type}")

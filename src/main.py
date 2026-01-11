@@ -462,7 +462,8 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify
         model_config = model_manager.configs.get(request.model)
 
         # MXBAI Reranker (true cross-encoder - SOTA quality)
-        if model_config and model_config.type == "mxbai_reranker":
+        # Supports both V1 (DeBERTa) and V2 (Qwen2) architectures
+        if model_config and model_config.type in ("mxbai_reranker", "mxbai_reranker_v1"):
             if not MXBAI_RERANK_AVAILABLE:
                 raise HTTPException(
                     status_code=500,
