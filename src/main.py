@@ -175,6 +175,21 @@ class RerankRequest(BaseModel):
     documents: List[str]
     top_k: Optional[int] = None  # Return all by default
 
+
+class VisionRequest(BaseModel):
+    """Request for vision-language model inference"""
+    model: str = Field(default="lfm25-vl", description="Vision-language model to use")
+    image: str = Field(..., description="Base64 encoded image (with or without data URI prefix)")
+    prompt: str = Field(default="Extract all text from this document.", description="Prompt for the model")
+    max_tokens: Optional[int] = Field(default=512, description="Maximum tokens to generate")
+
+
+class VisionResponse(BaseModel):
+    """Response from vision-language model"""
+    model: str
+    response: str
+    latency_ms: float
+
 class RerankResponse(BaseModel):
     model: str
     results: List[dict]  # [{"index": 0, "document": "...", "relevance_score": 0.95}, ...]
@@ -343,6 +358,13 @@ async def list_models():
             "digest": "mxbai-rerank-base-v2-4bit",
             "modified_at": "2026-01-11T00:00:00Z",
             "details": "🏆 MXBAI-Rerank-V2 SOTA cross-encoder | BEIR 55.57 | 100+ languages | 4-bit NF4"
+        },
+        {
+            "name": "lfm25-vl",
+            "size": 3200000000,  # ~3.2GB
+            "digest": "lfm25-vl-1.6b",
+            "modified_at": "2026-01-11T00:00:00Z",
+            "details": "👁️ LFM2.5-VL-1.6B Vision-Language | Document OCR | Edge-first CPU design | 1.6B params"
         }
     ]
 
@@ -531,15 +553,24 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(verify
 
 
 @app.post("/api/classify/file")
-async def classify_document_file(file: UploadFile = File(...), api_key: str = Depends(verify_api_key)):
+async def classify_document_file(
+    file: UploadFile = File(...),
+    model: str = "vl-classifier",
+    api_key: str = Depends(verify_api_key)
+):
     """
     Classify document complexity from uploaded file (multipart/form-data).
+
+    **Models:**
+    - vl-classifier: ResNet18 ONNX (fast, ~10ms)
+    - lfm25-vl: LFM2.5-VL-1.6B VLM (accurate, ~10-15s)
 
     **Usage:**
     ```bash
     curl -X POST http://localhost:11435/api/classify/file \\
       -H "X-API-Key: YOUR_API_KEY" \\
-      -F "file=@document.jpg"
+      -F "file=@document.jpg" \\
+      -F "model=vl-classifier"
     ```
 
     **Returns:**
@@ -551,6 +582,11 @@ async def classify_document_file(file: UploadFile = File(...), api_key: str = De
 
     **Use case:** Route LOW complexity to OCR (~100ms), HIGH to VLM (~2000ms)
     """
+    global model_manager
+    import io
+    import time
+    from PIL import Image
+
     try:
         # Validate file type
         if not file.content_type.startswith('image/'):
@@ -559,10 +595,51 @@ async def classify_document_file(file: UploadFile = File(...), api_key: str = De
                 detail=f"Invalid file type: {file.content_type}. Expected image/*"
             )
 
-        # Get classifier (lazy loading)
-        classifier = get_classifier()
+        # Use LFM2.5-VL for classification if requested
+        if model == "lfm25-vl":
+            image_bytes = await file.read()
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # Predict
+            vlm_model, vlm_processor = model_manager.get_model("lfm25-vl")
+
+            # Classification prompt
+            prompt = """Analyze this document image and classify its complexity:
+- LOW: Simple text, single column, no tables, easy to OCR
+- HIGH: Complex layout, tables, forms, multiple columns, needs VLM reasoning
+
+Answer with ONLY one word: LOW or HIGH"""
+
+            conversation = [{"role": "user", "content": [
+                {"type": "image", "image": image},
+                {"type": "text", "text": prompt}
+            ]}]
+
+            inputs = vlm_processor.apply_chat_template(
+                conversation, add_generation_prompt=True,
+                return_tensors="pt", return_dict=True, tokenize=True
+            ).to(vlm_model.device)
+
+            start_time = time.time()
+            outputs = vlm_model.generate(**inputs, max_new_tokens=10)
+            latency_ms = (time.time() - start_time) * 1000
+
+            response = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+            # Parse response
+            is_high = "HIGH" in response.upper()
+            class_name = "HIGH" if is_high else "LOW"
+
+            return {
+                "class_name": class_name,
+                "confidence": 0.85,  # VLM doesn't provide exact confidence
+                "probabilities": {"LOW": 0.15 if is_high else 0.85, "HIGH": 0.85 if is_high else 0.15},
+                "routing_decision": f"Route to {'VLM reasoning' if is_high else 'fast OCR'}",
+                "latency_ms": round(latency_ms, 2),
+                "model": "lfm25-vl"
+            }
+
+        # Default: Use ResNet18 classifier
+        classifier = get_classifier()
         result = await classifier.predict_from_file(file)
         return result
 
@@ -578,12 +655,16 @@ async def classify_document_base64(request: ClassifyRequest, api_key: str = Depe
     """
     Classify document complexity from base64 encoded image (application/json).
 
+    **Models:**
+    - vl-classifier: ResNet18 ONNX (fast, ~10ms) - default
+    - lfm25-vl: LFM2.5-VL-1.6B VLM (accurate, ~10-15s)
+
     **Usage:**
     ```bash
     curl -X POST http://localhost:11435/api/classify/base64 \\
       -H "X-API-Key: YOUR_API_KEY" \\
       -H "Content-Type: application/json" \\
-      -d '{"image":"data:image/jpeg;base64,/9j/4AAQ..."}'
+      -d '{"image":"data:image/jpeg;base64,/9j/4AAQ...", "model":"lfm25-vl"}'
     ```
 
     **Returns:**
@@ -595,6 +676,12 @@ async def classify_document_base64(request: ClassifyRequest, api_key: str = Depe
 
     **Use case:** Route LOW complexity to OCR (~100ms), HIGH to VLM (~2000ms)
     """
+    global model_manager
+    import base64
+    import io
+    import time
+    from PIL import Image
+
     try:
         # Validate input
         if request.image is None:
@@ -603,10 +690,56 @@ async def classify_document_base64(request: ClassifyRequest, api_key: str = Depe
                 detail="Missing 'image' field in JSON body"
             )
 
-        # Get classifier (lazy loading)
-        classifier = get_classifier()
+        # Use LFM2.5-VL for classification if requested
+        if request.model == "lfm25-vl":
+            # Decode base64 image
+            image_data = request.image
+            if image_data.startswith("data:"):
+                image_data = image_data.split(",", 1)[1]
 
-        # Predict
+            image_bytes = base64.b64decode(image_data)
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+            vlm_model, vlm_processor = model_manager.get_model("lfm25-vl")
+
+            # Classification prompt
+            prompt = """Analyze this document image and classify its complexity:
+- LOW: Simple text, single column, no tables, easy to OCR
+- HIGH: Complex layout, tables, forms, multiple columns, needs VLM reasoning
+
+Answer with ONLY one word: LOW or HIGH"""
+
+            conversation = [{"role": "user", "content": [
+                {"type": "image", "image": image},
+                {"type": "text", "text": prompt}
+            ]}]
+
+            inputs = vlm_processor.apply_chat_template(
+                conversation, add_generation_prompt=True,
+                return_tensors="pt", return_dict=True, tokenize=True
+            ).to(vlm_model.device)
+
+            start_time = time.time()
+            outputs = vlm_model.generate(**inputs, max_new_tokens=10)
+            latency_ms = (time.time() - start_time) * 1000
+
+            response = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+            # Parse response
+            is_high = "HIGH" in response.upper()
+            class_name = "HIGH" if is_high else "LOW"
+
+            return {
+                "class_name": class_name,
+                "confidence": 0.85,  # VLM doesn't provide exact confidence
+                "probabilities": {"LOW": 0.15 if is_high else 0.85, "HIGH": 0.85 if is_high else 0.15},
+                "routing_decision": f"Route to {'VLM reasoning' if is_high else 'fast OCR'}",
+                "latency_ms": round(latency_ms, 2),
+                "model": "lfm25-vl"
+            }
+
+        # Default: Use ResNet18 classifier
+        classifier = get_classifier()
         result = await classifier.predict_from_base64(request.image)
         return result
 
@@ -614,6 +747,228 @@ async def classify_document_base64(request: ClassifyRequest, api_key: str = Depe
         raise
     except Exception as e:
         logger.error(f"Classification error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Vision-Language API (Document OCR with LFM2.5-VL)
+# ============================================================================
+
+@app.post("/api/vision", response_model=VisionResponse)
+async def process_vision(request: VisionRequest, api_key: str = Depends(verify_api_key)):
+    """
+    Process an image with a vision-language model for OCR and document understanding.
+
+    **Models:**
+    - lfm25-vl: LFM2.5-VL-1.6B (excellent OCR, edge-first design)
+
+    **Usage:**
+    ```bash
+    curl -X POST http://localhost:11436/api/vision \\
+      -H "X-API-Key: YOUR_API_KEY" \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "model": "lfm25-vl",
+        "image": "data:image/png;base64,iVBORw0KGgo...",
+        "prompt": "Extract all text from this document."
+      }'
+    ```
+
+    **Prompts examples:**
+    - "Extract all text from this document." (OCR)
+    - "Is this document SIMPLE or COMPLEX? Answer with just one word." (Classification)
+    - "Summarize the main content in 2-3 sentences." (Summary)
+    - "What type of document is this?" (Document type detection)
+
+    **Returns:**
+    - model: Model used
+    - response: Generated text response
+    - latency_ms: Processing time in milliseconds
+    """
+    global model_manager
+    import base64
+    import io
+    import time
+    from PIL import Image
+
+    # Validate model
+    if request.model not in model_manager.configs:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{request.model}' not found. Available vision models: lfm25-vl"
+        )
+
+    model_config = model_manager.configs[request.model]
+    if model_config.type != "vision_language":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{request.model}' is not a vision-language model"
+        )
+
+    try:
+        # Decode base64 image
+        image_data = request.image
+        if image_data.startswith("data:"):
+            # Remove data URI prefix (e.g., "data:image/png;base64,")
+            image_data = image_data.split(",", 1)[1]
+
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        # Get model (lazy loading) - returns (model, processor) tuple
+        vlm_model, vlm_processor = model_manager.get_model(request.model)
+
+        # Prepare conversation
+        conversation = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": request.prompt},
+                ],
+            },
+        ]
+
+        # Process inputs
+        inputs = vlm_processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+            tokenize=True,
+        ).to(vlm_model.device)
+
+        # Generate response
+        start_time = time.time()
+        outputs = vlm_model.generate(**inputs, max_new_tokens=request.max_tokens or 512)
+        latency_ms = (time.time() - start_time) * 1000
+
+        # Decode response
+        response_text = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+        # Extract just the assistant's response (remove the prompt echo)
+        if "assistant" in response_text.lower():
+            # Try to extract text after "assistant" marker
+            parts = response_text.split("assistant")
+            if len(parts) > 1:
+                response_text = parts[-1].strip()
+
+        logger.info(f"Vision processed with {request.model} in {latency_ms:.0f}ms")
+
+        return VisionResponse(
+            model=request.model,
+            response=response_text,
+            latency_ms=round(latency_ms, 2)
+        )
+
+    except Exception as e:
+        logger.error(f"Vision processing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vision/file")
+async def process_vision_file(
+    file: UploadFile = File(...),
+    prompt: str = "Extract all text from this document.",
+    model: str = "lfm25-vl",
+    max_tokens: int = 512,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Process an uploaded image file with a vision-language model.
+
+    **Usage:**
+    ```bash
+    curl -X POST http://localhost:11436/api/vision/file \\
+      -H "X-API-Key: YOUR_API_KEY" \\
+      -F "file=@document.png" \\
+      -F "prompt=Extract all text from this document."
+    ```
+
+    **Returns:**
+    - model: Model used
+    - response: Generated text response
+    - latency_ms: Processing time in milliseconds
+    """
+    global model_manager
+    import base64
+    import io
+    import time
+    from PIL import Image
+
+    # Validate file type
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type: {file.content_type}. Expected image/*"
+        )
+
+    # Validate model
+    if model not in model_manager.configs:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{model}' not found. Available vision models: lfm25-vl"
+        )
+
+    model_config = model_manager.configs[model]
+    if model_config.type != "vision_language":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{model}' is not a vision-language model"
+        )
+
+    try:
+        # Read image
+        image_bytes = await file.read()
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        # Get model (lazy loading) - returns (model, processor) tuple
+        vlm_model, vlm_processor = model_manager.get_model(model)
+
+        # Prepare conversation
+        conversation = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": prompt},
+                ],
+            },
+        ]
+
+        # Process inputs
+        inputs = vlm_processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+            tokenize=True,
+        ).to(vlm_model.device)
+
+        # Generate response
+        start_time = time.time()
+        outputs = vlm_model.generate(**inputs, max_new_tokens=max_tokens)
+        latency_ms = (time.time() - start_time) * 1000
+
+        # Decode response
+        response_text = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+        # Extract just the assistant's response
+        if "assistant" in response_text.lower():
+            parts = response_text.split("assistant")
+            if len(parts) > 1:
+                response_text = parts[-1].strip()
+
+        logger.info(f"Vision file processed with {model} in {latency_ms:.0f}ms")
+
+        return {
+            "model": model,
+            "response": response_text,
+            "latency_ms": round(latency_ms, 2)
+        }
+
+    except Exception as e:
+        logger.error(f"Vision file processing error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

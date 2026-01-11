@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 class ClassifyRequest(BaseModel):
     """Request model for complexity classification."""
     image: Optional[str] = None  # Base64 encoded image
+    model: str = "vl-classifier"  # Model to use: "vl-classifier" (ResNet18) or "lfm25-vl" (VLM)
 
 
 class ComplexityClassifier:

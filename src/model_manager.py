@@ -295,6 +295,22 @@ class ModelManager:
         )
 
         # ============================================================
+        # LFM2.5-VL-1.6B (Vision-Language Model for Document OCR)
+        # https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B
+        # 1.6B params, Edge-first design (excellent CPU performance)
+        # OCRBench v2: 41.44%, excellent document text extraction
+        # Requires transformers >= 5.0 (trust_remote_code=True)
+        # ============================================================
+        self.configs["lfm25-vl"] = ModelConfig(
+            name="lfm25-vl",
+            type="vision_language",
+            hub_id=os.getenv("HF_MODEL_LFM25_VL", "LiquidAI/LFM2.5-VL-1.6B"),
+            priority=1,
+            estimated_vram_mb=3200,  # ~3.2GB in BF16
+            device=self.device
+        )
+
+        # ============================================================
         # MXBAI-Rerank-V2 (SOTA cross-encoder reranker, 100+ languages)
         # https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v2
         # 0.5B params (base), Qwen2 architecture, BEIR 55.57
@@ -683,6 +699,45 @@ class ModelManager:
                 if config.truncate_dims:
                     model._truncate_dims = config.truncate_dims
                     logger.info(f"   Embeddings will be truncated to {config.truncate_dims}D")
+
+            elif config.type == "vision_language":
+                # Load Vision-Language Model (LFM2.5-VL)
+                # Requires transformers >= 5.0 with trust_remote_code=True
+                try:
+                    from transformers import AutoModelForImageTextToText, AutoProcessor
+                except ImportError:
+                    raise ImportError("transformers >= 5.0 required for vision-language models")
+
+                logger.info(f"Loading Vision-Language model {name}...")
+
+                # Load model with trust_remote_code for custom architecture
+                model_kwargs = {
+                    "torch_dtype": torch.bfloat16 if config.device == "cuda" else torch.float32,
+                    "low_cpu_mem_usage": True,
+                    "trust_remote_code": True,
+                }
+
+                if config.device == "cuda":
+                    model_kwargs["device_map"] = {"": config.device}
+
+                vlm_model = AutoModelForImageTextToText.from_pretrained(
+                    config.hub_id,
+                    **model_kwargs
+                )
+
+                # Load processor (tokenizer + image processor)
+                vlm_processor = AutoProcessor.from_pretrained(
+                    config.hub_id,
+                    trust_remote_code=True
+                )
+
+                # Move to device if CPU
+                if config.device == "cpu":
+                    vlm_model = vlm_model.to(config.device)
+
+                # Store as tuple (model, processor)
+                model = (vlm_model, vlm_processor)
+                logger.info(f"✅ {name} loaded (Vision-Language Model)")
 
             elif config.type == "mxbai_reranker":
                 # Load MXBAI Rerank V2 (SOTA cross-encoder)
