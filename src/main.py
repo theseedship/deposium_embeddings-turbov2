@@ -339,10 +339,10 @@ async def list_models():
         },
         {
             "name": "mxbai-rerank-v2",
-            "size": 1000000000,  # ~1GB
-            "digest": "mxbai-rerank-base-v2",
-            "modified_at": "2026-01-10T00:00:00Z",
-            "details": "🏆 MXBAI-Rerank-V2 SOTA cross-encoder | BEIR 55.57 | 100+ languages"
+            "size": 250000000,  # ~250MB with 4-bit quantization
+            "digest": "mxbai-rerank-base-v2-4bit",
+            "modified_at": "2026-01-11T00:00:00Z",
+            "details": "🏆 MXBAI-Rerank-V2 SOTA cross-encoder | BEIR 55.57 | 100+ languages | 4-bit NF4"
         }
     ]
 

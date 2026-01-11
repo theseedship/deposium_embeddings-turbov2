@@ -136,7 +136,7 @@ class OnnxEmbeddingModel:
 class ModelConfig:
     """Configuration for a model."""
     name: str
-    type: str  # "model2vec", "sentence_transformer", "sentence_transformer_2d"
+    type: str  # "model2vec", "sentence_transformer", "sentence_transformer_2d", "mxbai_reranker"
     path: Optional[str] = None  # Local path
     hub_id: Optional[str] = None  # HuggingFace ID
     priority: int = 0  # Higher = kept in memory longer
@@ -145,6 +145,8 @@ class ModelConfig:
     # 2D Matryoshka options (for adaptive layer models)
     truncate_layers: Optional[int] = None  # Number of layers to use (None = all)
     truncate_dims: Optional[int] = None  # Embedding dimensions to keep (None = all)
+    # Quantization options
+    quantize_4bit: bool = False  # Enable 4-bit quantization (BitsAndBytes NF4)
 
 
 class ModelManager:
@@ -297,14 +299,16 @@ class ModelManager:
         # https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v2
         # 0.5B params (base), Qwen2 architecture, BEIR 55.57
         # Uses native mxbai-rerank library (not sentence-transformers)
+        # 4-bit quantization: 1GB → ~250MB VRAM
         # ============================================================
         self.configs["mxbai-rerank-v2"] = ModelConfig(
             name="mxbai-rerank-v2",
             type="mxbai_reranker",
             hub_id=os.getenv("HF_MODEL_MXBAI_RERANK", "mixedbread-ai/mxbai-rerank-base-v2"),
             priority=1,
-            estimated_vram_mb=1000,  # ~1GB for base-v2
-            device=self.device
+            estimated_vram_mb=250,  # ~250MB with 4-bit quantization (was 1GB FP32)
+            device=self.device,
+            quantize_4bit=True  # Enable 4-bit NF4 quantization
         )
         
     def get_vram_usage_mb(self) -> Tuple[int, int]:
@@ -682,15 +686,43 @@ class ModelManager:
 
             elif config.type == "mxbai_reranker":
                 # Load MXBAI Rerank V2 (SOTA cross-encoder)
-                # Uses native mxbai-rerank library
+                # Uses native mxbai-rerank library with optional 4-bit quantization
                 try:
                     from mxbai_rerank import MxbaiRerankV2
                 except ImportError:
                     raise ImportError("mxbai-rerank not installed. Install with: pip install mxbai-rerank")
 
                 logger.info(f"Loading MXBAI Reranker {name}...")
-                model = MxbaiRerankV2(config.hub_id)
-                logger.info(f"✅ {name} loaded (MXBAI cross-encoder reranker)")
+
+                # Prepare kwargs for model loading
+                model_kwargs = {
+                    "device": config.device,
+                    "torch_dtype": torch.float16,  # Use float16 by default
+                }
+
+                # Apply 4-bit quantization if enabled and on CUDA
+                if config.quantize_4bit and config.device == "cuda" and BNB_AVAILABLE:
+                    try:
+                        logger.info(f"Applying 4-bit NF4 quantization to {name}...")
+                        quantization_config = BitsAndBytesConfig(
+                            load_in_4bit=True,
+                            bnb_4bit_use_double_quant=True,
+                            bnb_4bit_quant_type="nf4",
+                            bnb_4bit_compute_dtype=torch.float16
+                        )
+                        model_kwargs["quantization_config"] = quantization_config
+                        model_kwargs["device_map"] = "auto"
+                        # Remove device from kwargs when using device_map
+                        del model_kwargs["device"]
+                    except Exception as e:
+                        logger.warning(f"4-bit quantization setup failed, falling back to float16: {e}")
+
+                model = MxbaiRerankV2(config.hub_id, **model_kwargs)
+
+                if config.quantize_4bit and "quantization_config" in model_kwargs:
+                    logger.info(f"✅ {name} loaded with 4-bit NF4 quantization (~75% VRAM reduction)")
+                else:
+                    logger.info(f"✅ {name} loaded (MXBAI cross-encoder reranker)")
 
             else:
                 raise ValueError(f"Unknown model type: {config.type}")
