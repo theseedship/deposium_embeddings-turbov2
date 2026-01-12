@@ -197,7 +197,7 @@ Note: mxbai-rerank-xsmall (V1 DeBERTa) doesn't support 4-bit quantization but is
 | qwen3-embed/rerank | ~1.2GB | GPU (Float16) |
 | mxbai-embed-2d | ~800MB | GPU |
 | mxbai-rerank-v2 | ~250MB | GPU (4-bit NF4) |
-| mxbai-rerank-xsmall | ~150MB | GPU (4-bit NF4) |
+| mxbai-rerank-xsmall | ~200MB | CPU (DeBERTa V1) |
 | lfm25-vl | ~3.2GB | GPU (BF16) |
 | vl-classifier | ~0MB | CPU (ONNX) |
 
@@ -210,6 +210,21 @@ Note: mxbai-rerank-xsmall (V1 DeBERTa) doesn't support 4-bit quantization but is
 ### Ollama Credentials
 - **Base URL**: `http://deposium-embeddings-turbov2:11435`
 - **Model Name**: `m2v-bge-m3-1024d` (or any available model)
+
+### Timeout Configuration
+
+**Important:** Models use lazy loading. The first request may take 30-60s while the model loads.
+
+| Scenario | Recommended Timeout |
+|----------|-------------------|
+| First request (model loading) | 60-90s |
+| Subsequent requests | 5-10s |
+| VLM (lfm25-vl) | 60-120s |
+
+For n8n-nodes-ollama-reranker:
+- Go to **Additional Options** → **Request Timeout (ms)**
+- Set to `60000` (60s) minimum for first requests
+- Subsequent requests are fast (~100-300ms)
 
 ### Workflow Example (Document Routing)
 ```
