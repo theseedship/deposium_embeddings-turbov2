@@ -53,6 +53,8 @@ benchmarks/models/**/best_model.pt
 benchmarks/models/**/*.onnx
 benchmarks/mteb/results/
 benchmarks/mteb/results_baseline/
+scripts/benchmark/test_documents/
+scripts/benchmark/vlm_benchmark_results.json
 
 # Research archives - exclude large model files only
 research-archives/**/*-deposium-*/
