@@ -136,7 +136,7 @@ class OnnxEmbeddingModel:
 class ModelConfig:
     """Configuration for a model."""
     name: str
-    type: str  # "model2vec", "sentence_transformer", "sentence_transformer_2d", "mxbai_reranker"
+    type: str  # "model2vec", "sentence_transformer", "sentence_transformer_2d", "mxbai_reranker", "causal_lm"
     path: Optional[str] = None  # Local path
     hub_id: Optional[str] = None  # HuggingFace ID
     priority: int = 0  # Higher = kept in memory longer
@@ -147,6 +147,8 @@ class ModelConfig:
     truncate_dims: Optional[int] = None  # Embedding dimensions to keep (None = all)
     # Quantization options
     quantize_4bit: bool = False  # Enable 4-bit quantization (BitsAndBytes NF4)
+    # Causal LM options
+    context_length: int = 4096  # Maximum context length for causal LMs
 
 
 class ModelManager:
@@ -341,6 +343,53 @@ class ModelManager:
             estimated_vram_mb=200,  # ~200MB (no quantization for V1)
             device=self.device,
             quantize_4bit=False  # V1 doesn't support bitsandbytes quantization
+        )
+
+        # ============================================================
+        # Causal Language Models (for Anthropic-compatible API)
+        # These models are used with the /v1/messages endpoint
+        # ============================================================
+
+        # Qwen2.5-Coder-7B-Instruct (excellent for code generation)
+        # https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct
+        # 7B params, 32K context, native tool calling
+        self.configs["qwen2.5-coder-7b"] = ModelConfig(
+            name="qwen2.5-coder-7b",
+            type="causal_lm",
+            hub_id=os.getenv("HF_MODEL_QWEN_CODER", "Qwen/Qwen2.5-Coder-7B-Instruct"),
+            priority=1,
+            estimated_vram_mb=4500,  # ~4.5GB with 4-bit quantization
+            device=self.device,
+            quantize_4bit=True,
+            context_length=32768
+        )
+
+        # Qwen2.5-Coder-3B-Instruct (lighter alternative)
+        # https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct
+        # 3B params, 32K context, native tool calling
+        self.configs["qwen2.5-coder-3b"] = ModelConfig(
+            name="qwen2.5-coder-3b",
+            type="causal_lm",
+            hub_id=os.getenv("HF_MODEL_QWEN_CODER_3B", "Qwen/Qwen2.5-Coder-3B-Instruct"),
+            priority=1,
+            estimated_vram_mb=2000,  # ~2GB with 4-bit quantization
+            device=self.device,
+            quantize_4bit=True,
+            context_length=32768
+        )
+
+        # Qwen2.5-Coder-1.5B-Instruct (minimal footprint)
+        # https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct
+        # 1.5B params, 32K context
+        self.configs["qwen2.5-coder-1.5b"] = ModelConfig(
+            name="qwen2.5-coder-1.5b",
+            type="causal_lm",
+            hub_id=os.getenv("HF_MODEL_QWEN_CODER_1B", "Qwen/Qwen2.5-Coder-1.5B-Instruct"),
+            priority=1,
+            estimated_vram_mb=1200,  # ~1.2GB with 4-bit quantization
+            device=self.device,
+            quantize_4bit=True,
+            context_length=32768
         )
 
     def get_vram_usage_mb(self) -> Tuple[int, int]:
@@ -828,6 +877,72 @@ class ModelManager:
                         logger.info(f"   VRAM allocated: {mem_mb:.0f}MB")
                 else:
                     logger.info(f"✅ {name} loaded on CPU (V1 DeBERTa - lightweight)")
+
+            elif config.type == "causal_lm":
+                # Load Causal Language Model for Anthropic-compatible API
+                # Supports Qwen2.5-Coder, Llama, Mistral, etc.
+                try:
+                    from transformers import AutoModelForCausalLM, AutoTokenizer
+                except ImportError:
+                    raise ImportError("transformers not installed")
+
+                logger.info(f"Loading Causal LM {name}...")
+
+                # Prepare model kwargs
+                model_kwargs = {
+                    "torch_dtype": torch.float16,
+                    "low_cpu_mem_usage": True,
+                    "trust_remote_code": True,
+                }
+
+                # Apply 4-bit quantization if enabled and on CUDA
+                if config.quantize_4bit and config.device == "cuda" and BNB_AVAILABLE:
+                    try:
+                        logger.info(f"Applying 4-bit NF4 quantization to {name}...")
+                        quantization_config = BitsAndBytesConfig(
+                            load_in_4bit=True,
+                            bnb_4bit_use_double_quant=True,
+                            bnb_4bit_quant_type="nf4",
+                            bnb_4bit_compute_dtype=torch.float16
+                        )
+                        model_kwargs["quantization_config"] = quantization_config
+                        model_kwargs["device_map"] = "auto"
+                    except Exception as e:
+                        logger.warning(f"4-bit quantization setup failed: {e}")
+                        model_kwargs["device_map"] = {"": config.device}
+                else:
+                    if config.device == "cuda":
+                        model_kwargs["device_map"] = {"": config.device}
+
+                # Load model
+                causal_model = AutoModelForCausalLM.from_pretrained(
+                    config.hub_id,
+                    **model_kwargs
+                )
+
+                # Load tokenizer
+                tokenizer = AutoTokenizer.from_pretrained(
+                    config.hub_id,
+                    trust_remote_code=True
+                )
+
+                # Ensure pad token is set
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+
+                # Store as tuple (model, tokenizer)
+                model = (causal_model, tokenizer)
+
+                # Log loading info
+                if config.quantize_4bit and "quantization_config" in model_kwargs:
+                    logger.info(f"✅ {name} loaded with 4-bit NF4 quantization")
+                else:
+                    logger.info(f"✅ {name} loaded (float16)")
+
+                if torch.cuda.is_available():
+                    mem_mb = torch.cuda.memory_allocated() / 1024 / 1024
+                    logger.info(f"   VRAM allocated: {mem_mb:.0f}MB")
+                    logger.info(f"   Context length: {config.context_length}")
 
             else:
                 raise ValueError(f"Unknown model type: {config.type}")

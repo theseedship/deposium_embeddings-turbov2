@@ -23,6 +23,9 @@ from .classifier import get_classifier, ClassifyRequest
 from .model_manager import get_model_manager
 # Import benchmark runner
 from .benchmarks import OpenBenchRunner, BenchmarkCategory, get_openbench_runner
+# Import Anthropic-compatible API router
+from .anthropic_compat import anthropic_router
+from .anthropic_compat.router import set_dependencies as set_anthropic_dependencies
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,10 +33,13 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Deposium Embeddings - M2V-BGE-M3 + BGE-M3 ONNX",
-    description="🔥 M2V-BGE-M3-1024D (distilled from BGE-M3, ~3x more energy efficient) + BGE-M3-ONNX INT8 (CPU high quality) + Qwen3 Reranking + VL Classifier",
-    version="11.0.0"
+    title="Deposium Embeddings - M2V-BGE-M3 + BGE-M3 ONNX + Anthropic API",
+    description="🔥 M2V-BGE-M3-1024D (distilled from BGE-M3, ~3x more energy efficient) + BGE-M3-ONNX INT8 (CPU high quality) + Qwen3 Reranking + VL Classifier + Anthropic-compatible LLM API",
+    version="12.0.0"
 )
+
+# Include Anthropic-compatible API router
+app.include_router(anthropic_router)
 
 # Initialize model manager
 model_manager = None
@@ -110,8 +116,12 @@ async def initialize_models():
     logger.info("=" * 80)
     logger.info("🚀 Initializing Model Manager with Dynamic VRAM Management")
     logger.info("=" * 80)
-    
+
     model_manager = get_model_manager()
+
+    # Set up Anthropic-compatible API dependencies
+    set_anthropic_dependencies(model_manager, verify_api_key)
+    logger.info("✅ Anthropic-compatible API initialized (/v1/messages)")
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Device: {device}")
@@ -202,14 +212,23 @@ async def root():
         "gemma-768d": "📚 Gemma-768D Model2Vec (LEGACY) - Multilingual | MTEB: 0.55",
         "qwen3-rerank": "🏆 Qwen3 FP32 Reranking - FASTEST + BEST PRECISION (242ms for 3 docs!)",
         "vl-classifier": "🎯 Document Complexity Classifier - ResNet18 ONNX INT8 (93% accuracy, ~10ms)",
+        "qwen2.5-coder-7b": "🤖 Qwen2.5-Coder-7B - LLM for code generation | 32K context | Tool calling",
+        "qwen2.5-coder-3b": "🤖 Qwen2.5-Coder-3B - Lighter LLM | 32K context | Tool calling",
+        "qwen2.5-coder-1.5b": "🤖 Qwen2.5-Coder-1.5B - Minimal LLM | 32K context",
     }
 
     return {
-        "service": "Deposium Embeddings - M2V-BGE-M3 + ONNX + Rerank + Classifier",
+        "service": "Deposium Embeddings + Anthropic-compatible LLM API",
         "status": "running",
-        "version": "11.0.0",
+        "version": "12.0.0",
         "models": model_info,
-        "recommended": "m2v-bge-m3-1024d for fast embeddings, bge-m3-onnx for quality, qwen3-rerank for reranking",
+        "recommended": "m2v-bge-m3-1024d for embeddings, qwen2.5-coder-7b for code generation via /v1/messages",
+        "anthropic_api": {
+            "endpoint": "/v1/messages",
+            "description": "Anthropic-compatible API for local LLMs (Claude Code compatible)",
+            "usage": "export ANTHROPIC_BASE_URL=http://localhost:8000 && claude --model qwen2.5-coder-7b",
+            "features": ["streaming", "tool_calling", "system_prompts"],
+        },
         "quality_metrics": {
             "m2v-bge-m3-1024d": {
                 "overall_mteb": 0.47,
@@ -259,6 +278,30 @@ async def root():
                 "size_mb": 11,
                 "classes": ["LOW", "HIGH"],
                 "use_case": "Document routing - simple (OCR) vs complex (VLM)"
+            },
+            "qwen2.5-coder-7b": {
+                "params": "7B",
+                "context_length": 32768,
+                "quantization": "4-bit NF4",
+                "vram_gb": 4.5,
+                "features": ["code_generation", "tool_calling", "streaming"],
+                "use_case": "Anthropic-compatible LLM for code generation (Claude Code compatible)"
+            },
+            "qwen2.5-coder-3b": {
+                "params": "3B",
+                "context_length": 32768,
+                "quantization": "4-bit NF4",
+                "vram_gb": 2.0,
+                "features": ["code_generation", "tool_calling", "streaming"],
+                "use_case": "Lighter LLM for code generation with less VRAM"
+            },
+            "qwen2.5-coder-1.5b": {
+                "params": "1.5B",
+                "context_length": 32768,
+                "quantization": "4-bit NF4",
+                "vram_gb": 1.2,
+                "features": ["code_generation", "streaming"],
+                "use_case": "Minimal LLM for basic code tasks with minimal VRAM"
             }
         },
         "energy_benchmark": {
@@ -372,6 +415,28 @@ async def list_models():
             "digest": "lfm25-vl-1.6b",
             "modified_at": "2026-01-11T00:00:00Z",
             "details": "👁️ LFM2.5-VL-1.6B Vision-Language | Document OCR | Edge-first CPU design | 1.6B params"
+        },
+        # Causal Language Models (Anthropic-compatible API)
+        {
+            "name": "qwen2.5-coder-7b",
+            "size": 4500000000,  # ~4.5GB with 4-bit
+            "digest": "qwen2.5-coder-7b-instruct-4bit",
+            "modified_at": "2026-01-23T00:00:00Z",
+            "details": "🤖 Qwen2.5-Coder-7B | LLM for /v1/messages | 32K context | Tool calling | 4-bit NF4"
+        },
+        {
+            "name": "qwen2.5-coder-3b",
+            "size": 2000000000,  # ~2GB with 4-bit
+            "digest": "qwen2.5-coder-3b-instruct-4bit",
+            "modified_at": "2026-01-23T00:00:00Z",
+            "details": "🤖 Qwen2.5-Coder-3B | Lighter LLM for /v1/messages | 32K context | Tool calling | 4-bit NF4"
+        },
+        {
+            "name": "qwen2.5-coder-1.5b",
+            "size": 1200000000,  # ~1.2GB with 4-bit
+            "digest": "qwen2.5-coder-1.5b-instruct-4bit",
+            "modified_at": "2026-01-23T00:00:00Z",
+            "details": "🤖 Qwen2.5-Coder-1.5B | Minimal LLM for /v1/messages | 32K context | 4-bit NF4"
         }
     ]
 
