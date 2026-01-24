@@ -1,21 +1,33 @@
 """
 LLM Backend for Anthropic-compatible API.
 
+DEPRECATED: This module is maintained for backward compatibility.
+New code should use the backends module directly:
+
+    from anthropic_compat.backends import (
+        create_backend,
+        HuggingFaceBackend,
+        GenerationConfig,
+    )
+
 Handles inference with HuggingFace causal language models,
 supporting both synchronous generation and streaming.
 """
 
-import logging
-import time
+import warnings
 from typing import Any, Dict, Generator, List, Optional, Tuple
-import torch
 
-logger = logging.getLogger(__name__)
+# Import from new backends module for compatibility
+from .backends import HuggingFaceBackend, GenerationConfig
+
+__all__ = ["LLMBackend"]
 
 
 class LLMBackend:
     """
-    Backend for running inference on causal language models.
+    Backward-compatible wrapper around HuggingFaceBackend.
+
+    DEPRECATED: Use HuggingFaceBackend or create_backend() instead.
 
     Supports:
     - Qwen2.5-Coder and similar instruction-tuned models
@@ -32,9 +44,12 @@ class LLMBackend:
             tokenizer: HuggingFace tokenizer
             device: Device to run inference on
         """
-        self.model = model
-        self.tokenizer = tokenizer
-        self.device = device
+        warnings.warn(
+            "LLMBackend is deprecated. Use HuggingFaceBackend or create_backend() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        self._backend = HuggingFaceBackend(model, tokenizer, device)
 
     def generate(
         self,
@@ -59,59 +74,16 @@ class LLMBackend:
         Returns:
             Tuple of (generated_text, input_tokens, output_tokens)
         """
-        # Apply chat template
-        prompt = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
+        config = GenerationConfig(
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            stop_sequences=stop_sequences,
         )
 
-        # Tokenize
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self._get_max_context_length() - max_tokens
-        ).to(self.device)
-
-        input_tokens = inputs["input_ids"].shape[1]
-
-        # Build generation kwargs
-        gen_kwargs = {
-            "max_new_tokens": max_tokens,
-            "temperature": temperature if temperature > 0 else 1e-7,
-            "top_p": top_p,
-            "do_sample": temperature > 0,
-            "pad_token_id": self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
-            "eos_token_id": self.tokenizer.eos_token_id,
-        }
-
-        if top_k is not None:
-            gen_kwargs["top_k"] = top_k
-
-        # Add stop sequences if provided
-        if stop_sequences:
-            stop_ids = []
-            for seq in stop_sequences:
-                ids = self.tokenizer.encode(seq, add_special_tokens=False)
-                if ids:
-                    stop_ids.append(ids[0])
-            if stop_ids:
-                gen_kwargs["eos_token_id"] = [self.tokenizer.eos_token_id] + stop_ids
-
-        # Generate
-        with torch.inference_mode():
-            outputs = self.model.generate(
-                **inputs,
-                **gen_kwargs
-            )
-
-        # Decode only the new tokens
-        generated_ids = outputs[0][input_tokens:]
-        generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
-        output_tokens = len(generated_ids)
-
-        return generated_text, input_tokens, output_tokens
+        result = self._backend.generate(messages, config)
+        return result.text, result.input_tokens, result.output_tokens
 
     def generate_stream(
         self,
@@ -136,105 +108,21 @@ class LLMBackend:
         Yields:
             Tuples of (text_chunk, is_final, input_tokens, output_tokens)
         """
-        from threading import Thread
-        from transformers import TextIteratorStreamer
-
-        # Apply chat template
-        prompt = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
+        config = GenerationConfig(
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            stop_sequences=stop_sequences,
         )
 
-        # Tokenize
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self._get_max_context_length() - max_tokens
-        ).to(self.device)
-
-        input_tokens = inputs["input_ids"].shape[1]
-
-        # Create streamer
-        streamer = TextIteratorStreamer(
-            self.tokenizer,
-            skip_prompt=True,
-            skip_special_tokens=True
-        )
-
-        # Build generation kwargs
-        gen_kwargs = {
-            "max_new_tokens": max_tokens,
-            "temperature": temperature if temperature > 0 else 1e-7,
-            "top_p": top_p,
-            "do_sample": temperature > 0,
-            "pad_token_id": self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
-            "eos_token_id": self.tokenizer.eos_token_id,
-            "streamer": streamer,
-        }
-
-        if top_k is not None:
-            gen_kwargs["top_k"] = top_k
-
-        # Add stop sequences if provided
-        if stop_sequences:
-            stop_ids = []
-            for seq in stop_sequences:
-                ids = self.tokenizer.encode(seq, add_special_tokens=False)
-                if ids:
-                    stop_ids.append(ids[0])
-            if stop_ids:
-                gen_kwargs["eos_token_id"] = [self.tokenizer.eos_token_id] + stop_ids
-
-        # Start generation in a separate thread
-        def generate_async():
-            with torch.inference_mode():
-                self.model.generate(**inputs, **gen_kwargs)
-
-        thread = Thread(target=generate_async)
-        thread.start()
-
-        # Stream tokens
-        output_tokens = 0
-        accumulated_text = ""
-
-        for text in streamer:
-            accumulated_text += text
-            output_tokens += 1  # Approximate - streamer doesn't give exact count
-
-            # Check for stop sequences in accumulated text
-            should_stop = False
-            if stop_sequences:
-                for seq in stop_sequences:
-                    if seq in accumulated_text:
-                        # Truncate at stop sequence
-                        idx = accumulated_text.find(seq)
-                        text = accumulated_text[:idx]
-                        should_stop = True
-                        break
-
-            yield text, False, input_tokens, output_tokens
-
-            if should_stop:
-                break
-
-        thread.join()
-
-        # Final yield
-        yield "", True, input_tokens, output_tokens
+        for chunk in self._backend.generate_stream(messages, config):
+            yield chunk.text, chunk.is_final, chunk.input_tokens, chunk.output_tokens
 
     def _get_max_context_length(self) -> int:
         """Get the model's maximum context length."""
-        if hasattr(self.model.config, "max_position_embeddings"):
-            return self.model.config.max_position_embeddings
-        elif hasattr(self.model.config, "max_length"):
-            return self.model.config.max_length
-        elif hasattr(self.model.config, "n_positions"):
-            return self.model.config.n_positions
-        else:
-            return 4096  # Conservative default
+        return self._backend.capabilities.max_context_length
 
     def count_tokens(self, text: str) -> int:
         """Count tokens in a text string."""
-        return len(self.tokenizer.encode(text, add_special_tokens=False))
+        return self._backend.count_tokens(text)

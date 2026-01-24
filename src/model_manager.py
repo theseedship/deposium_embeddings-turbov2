@@ -149,6 +149,10 @@ class ModelConfig:
     quantize_4bit: bool = False  # Enable 4-bit quantization (BitsAndBytes NF4)
     # Causal LM options
     context_length: int = 4096  # Maximum context length for causal LMs
+    # Inference backend selection (for causal_lm models)
+    # Options: "huggingface", "vllm_local", "vllm_remote", "remote_openai"
+    # If None, uses LLM_BACKEND env var or auto-detects
+    backend_type: Optional[str] = None
 
 
 class ModelManager:

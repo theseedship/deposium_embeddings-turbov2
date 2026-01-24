@@ -26,6 +26,7 @@ from .benchmarks import OpenBenchRunner, BenchmarkCategory, get_openbench_runner
 # Import Anthropic-compatible API router
 from .anthropic_compat import anthropic_router
 from .anthropic_compat.router import set_dependencies as set_anthropic_dependencies
+from .anthropic_compat.backends import BackendConfig, get_available_backends
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -119,8 +120,14 @@ async def initialize_models():
 
     model_manager = get_model_manager()
 
+    # Initialize backend configuration from environment
+    backend_config = BackendConfig.from_env()
+    available_backends = get_available_backends()
+    logger.info(f"LLM Backend: {backend_config.backend_type.value}")
+    logger.info(f"Available backends: {[b.value for b in available_backends]}")
+
     # Set up Anthropic-compatible API dependencies
-    set_anthropic_dependencies(model_manager, verify_api_key)
+    set_anthropic_dependencies(model_manager, verify_api_key, backend_config)
     logger.info("✅ Anthropic-compatible API initialized (/v1/messages)")
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
