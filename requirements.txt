@@ -13,7 +13,7 @@ Pillow==12.0.0  # Note: Wheels 3-5x larger than v11
 torch==2.6.0
 
 # Transformers ecosystem
-transformers==4.51.0  # Compatible with optimum 1.25.x + sentence-transformers 5.1.2
+transformers==4.53.0  # Compatible with optimum 1.25.x + sentence-transformers 5.1.2
 sentence-transformers==5.1.2  # Warning: v5.1+ raises error on unused kwargs in encode()
 model2vec==0.7.0  # Numpy-only inference, quantization support
 
