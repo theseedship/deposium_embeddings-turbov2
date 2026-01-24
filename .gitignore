@@ -77,3 +77,9 @@ qwen3-emb-0.6b-onnx/
 mteb_*.json
 sts_*.json
 mteb_results_*/
+
+# Test coverage
+.coverage
+
+# Pip artifacts
+=*
