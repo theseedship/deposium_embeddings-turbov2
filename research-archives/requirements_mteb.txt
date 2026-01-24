@@ -2,7 +2,7 @@
 
 # Core dependencies
 model2vec>=0.6.0
-torch==2.6.0
+torch>=2.8.0
 transformers>=4.50.0
 
 # MTEB benchmark
