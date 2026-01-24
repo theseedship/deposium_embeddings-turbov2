@@ -5,15 +5,15 @@ python-multipart==0.0.20  # Security fix: CVE-2024-24762 (DoS vulnerabilities)
 pydantic==2.12.4
 
 # Data processing
-numpy==1.26.4  # LOCKED: PyTorch 2.6.0 incompatible with NumPy 2.x (torch.from_numpy() bug)
+numpy>=2.0.0  # PyTorch 2.8+ is compatible with NumPy 2.x
 safetensors==0.6.2
 Pillow==12.0.0  # Note: Wheels 3-5x larger than v11
 
-# PyTorch (stable, no upgrade needed)
-torch==2.6.0
+# PyTorch (security: CVE-2025-3730, CVE-2025-2953 fixed in 2.8.0)
+torch>=2.8.0
 
-# Transformers ecosystem
-transformers==4.51.0  # Compatible with optimum 1.25.x + sentence-transformers 5.1.2
+# Transformers ecosystem (security: 6 ReDoS CVEs fixed in 4.53.0)
+transformers>=4.53.0  # Compatible with optimum 1.25.x + sentence-transformers 5.1.2
 sentence-transformers==5.1.2  # Warning: v5.1+ raises error on unused kwargs in encode()
 model2vec==0.7.0  # Numpy-only inference, quantization support
 
@@ -24,7 +24,7 @@ accelerate==1.10.0  # FSDP2, FP8 support
 # ONNX Runtime for optimized CPU inference (VL classifier)
 # Note: Keeping optimum 1.25.x for stability (v2.0 has major breaking changes in ONNX integration)
 optimum[onnxruntime]>=1.25.0
-onnxruntime==1.23.2  # Requires numpy<2.0 (incompatible with NumPy 2.x)
+onnxruntime>=1.23.0  # v1.23+ supports NumPy 2.x
 
 # MTEB for model evaluation (optional, dev only)
 # mteb==1.18.0
@@ -38,4 +38,21 @@ openbench>=0.1.0
 # Models: mxbai-rerank-base-v2 (0.5B), mxbai-rerank-large-v2 (2B)
 # Docs: https://github.com/mixedbread-ai/mxbai-rerank
 mxbai-rerank>=0.1.0
+
+# HTTP client for remote backends (used by FastAPI internally)
+httpx>=0.27.0
+
+# =============================================================================
+# Optional: High-Performance Inference Backends
+# =============================================================================
+
+# vLLM - High-throughput LLM inference (24x faster than HuggingFace)
+# Requires: CUDA 12.1+, 8GB+ VRAM, Linux only
+# Install: pip install vllm>=0.6.0
+# Docs: https://docs.vllm.ai/
+# vllm>=0.6.0
+
+# OpenAI SDK - For remote OpenAI-compatible backends (vLLM server, SGLang, cloud)
+# Install: pip install openai>=1.50.0
+# openai>=1.50.0
 
