@@ -1,0 +1,1 @@
+# Anthropic compatibility layer tests
