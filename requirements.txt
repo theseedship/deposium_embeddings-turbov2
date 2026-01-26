@@ -1,7 +1,7 @@
 # Core API packages
 fastapi==0.121.1
 uvicorn==0.38.0
-python-multipart==0.0.20  # Security fix: CVE-2024-24762 (DoS vulnerabilities)
+python-multipart==0.0.22  # Security fix: CVE-2024-24762 (DoS vulnerabilities)
 pydantic==2.12.4
 
 # Data processing
