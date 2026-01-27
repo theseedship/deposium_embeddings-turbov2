@@ -43,6 +43,16 @@ mxbai-rerank>=0.1.0
 httpx>=0.27.0
 
 # =============================================================================
+# Audio Transcription (Whisper via faster-whisper)
+# =============================================================================
+
+# faster-whisper - CTranslate2-based Whisper inference (4x faster than OpenAI)
+# Features: CPU/CUDA inference, INT8 quantization, VAD filtering
+# Models: tiny, base, small, medium, large-v3
+# Docs: https://github.com/SYSTRAN/faster-whisper
+faster-whisper>=1.1.0
+
+# =============================================================================
 # Optional: High-Performance Inference Backends
 # =============================================================================
 

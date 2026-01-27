@@ -13,6 +13,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0] - 2026-01-27
+
+### Added
+- **Audio Transcription (Whisper)** - New audio processing module
+  - `faster-whisper` integration (4x faster than OpenAI Whisper)
+  - Models: whisper-tiny, whisper-base (default), whisper-small, whisper-medium
+  - CPU/CUDA inference with INT8 quantization
+  - Automatic language detection (100+ languages)
+  - Word-level timestamps support
+  - Voice Activity Detection (VAD)
+  - Translation to English
+
+- **Audio API Endpoints**
+  - `POST /api/transcribe` - Transcribe audio files (multipart upload)
+  - `POST /api/transcribe/base64` - Transcribe from base64 encoded audio
+  - `POST /api/audio/embed` - Audio embedding pipeline (transcribe + embed)
+
+- **WhisperHandler** - Standalone audio processing handler
+  - Lazy model loading with caching
+  - Model hot-swapping between sizes
+  - Memory cleanup on unload
+
+### Changed
+- Bumped to v13.0.0 (minor: new audio feature)
+- Updated README with audio transcription documentation
+- Added faster-whisper to requirements.txt
+
+---
+
 ## [3.0.0] - 2025-01-11
 
 ### Added

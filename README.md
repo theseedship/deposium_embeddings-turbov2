@@ -1,11 +1,12 @@
 # Deposium Embeddings TurboV2
 
-Ultra-fast embeddings, reranking, and vision-language service for production deployments.
+Ultra-fast embeddings, reranking, vision-language, and audio transcription service for production deployments.
 
 ## Features
 
-- **10+ Models** - Embeddings, reranking, document classification, OCR
+- **15+ Models** - Embeddings, reranking, document classification, OCR, audio transcription
 - **500-1000x faster** than full LLMs for embeddings
+- **Audio Transcription** - Whisper via faster-whisper (4x faster than OpenAI)
 - **Ollama-compatible API** - drop-in replacement
 - **Dynamic VRAM Management** - lazy loading, LRU cache, auto-unloading
 - **4-bit Quantization** - NF4 for rerankers (70% VRAM reduction)
@@ -41,6 +42,23 @@ Ultra-fast embeddings, reranking, and vision-language service for production dep
 |-------|------|------|---------|----------|
 | **vl-classifier** | ResNet18 ONNX | 11MB | ~10ms | Document complexity routing |
 | **lfm25-vl** | LFM2.5-VL-1.6B | 1.6B params | ~10-15s | Document OCR, text extraction |
+
+### Audio Transcription
+
+| Model | Type | RAM | WER | Speed | Use Case |
+|-------|------|-----|-----|-------|----------|
+| **whisper-tiny** | faster-whisper | ~40MB | 7.8% | Fastest | Quick transcription |
+| **whisper-base** | faster-whisper | ~1GB | 5.0% | Balanced | **Default** - general use |
+| **whisper-small** | faster-whisper | ~2GB | 3.4% | Good | Better accuracy |
+| **whisper-medium** | faster-whisper | ~5GB | 2.9% | Slower | High accuracy |
+
+**Features:**
+- 4x faster than OpenAI Whisper (CTranslate2 backend)
+- CPU/CUDA inference with INT8 quantization
+- Automatic language detection (100+ languages)
+- Word-level timestamps
+- Voice Activity Detection (VAD)
+- Translate to English
 
 ---
 
@@ -143,6 +161,53 @@ curl -X POST http://localhost:11435/api/vision \
   "model": "lfm25-vl",
   "response": "The document contains...",
   "latency_ms": 12500
+}
+```
+
+### `POST /api/transcribe`
+Audio transcription with Whisper
+
+```bash
+curl -X POST http://localhost:11435/api/transcribe \
+  -H "X-API-Key: YOUR_KEY" \
+  -F "file=@audio.mp3" \
+  -F "model=whisper-base" \
+  -F "language=en"
+```
+
+**Response:**
+```json
+{
+  "model": "whisper-base",
+  "text": "Hello, this is a test transcription.",
+  "language": "en",
+  "language_probability": 0.98,
+  "duration": 5.0,
+  "segments": [{"id": 0, "start": 0.0, "end": 5.0, "text": "Hello..."}],
+  "latency_ms": 1250
+}
+```
+
+### `POST /api/audio/embed`
+Audio embedding pipeline (transcribe + embed)
+
+```bash
+curl -X POST http://localhost:11435/api/audio/embed \
+  -H "X-API-Key: YOUR_KEY" \
+  -F "file=@podcast.mp3" \
+  -F "whisper_model=whisper-base" \
+  -F "embedding_model=m2v-bge-m3-1024d"
+```
+
+**Response:**
+```json
+{
+  "model": "whisper-base",
+  "text": "Transcribed text...",
+  "language": "en",
+  "embedding_model": "m2v-bge-m3-1024d",
+  "embeddings": [[0.123, -0.456, ...]],
+  "latency_ms": 2500
 }
 ```
 
