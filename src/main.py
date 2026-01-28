@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile, Header, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional
 from model2vec import StaticModel
 import torch
@@ -180,7 +180,17 @@ DEFAULT_RERANK_MODEL = os.getenv("DEFAULT_RERANK_MODEL", "qwen3-rerank")
 # Request/Response models
 class EmbedRequest(BaseModel):
     model: str = Field(default=DEFAULT_EMBEDDING_MODEL, description="Model to use for embeddings")
-    input: str | List[str]
+    input: Optional[str | List[str]] = Field(default=None, description="Text(s) to embed (OpenAI format)")
+    prompt: Optional[str] = Field(default=None, description="Text to embed (Ollama format)")
+
+    @model_validator(mode='after')
+    def normalize_input(self):
+        """Accept both 'input' (OpenAI) and 'prompt' (Ollama) formats for compatibility."""
+        if self.input is None and self.prompt is None:
+            raise ValueError("Either 'input' or 'prompt' must be provided")
+        if self.input is None and self.prompt is not None:
+            self.input = self.prompt
+        return self
 
 class EmbedResponse(BaseModel):
     model: str
