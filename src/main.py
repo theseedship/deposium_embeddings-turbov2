@@ -559,10 +559,17 @@ async def create_embedding(request: EmbedRequest, api_key: str = Depends(verify_
         truncation_info = f" (truncated to {truncate_dims}D)" if truncate_dims else ""
         logger.info(f"Generated {len(embeddings_list)} embeddings with {dims}D using {request.model}{truncation_info}")
 
-        return {
+        # Return both OpenAI format (embeddings) and Ollama format (embedding)
+        # This ensures compatibility with clients expecting either format
+        response = {
             "model": request.model,
-            "embeddings": embeddings_list
+            "embeddings": embeddings_list,  # OpenAI format: array of arrays
         }
+        # Add Ollama format: single array (first embedding) for single input
+        if len(embeddings_list) == 1:
+            response["embedding"] = embeddings_list[0]
+
+        return response
 
     except Exception as e:
         logger.error(f"Embedding error: {str(e)}")
