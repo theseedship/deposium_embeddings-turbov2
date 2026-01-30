@@ -36,6 +36,7 @@ from .base import (
 from .config import (
     BackendConfig,
     BackendType,
+    BitNetConfig,
     HuggingFaceConfig,
     QuantizationType,
     RemoteOpenAIConfig,
@@ -49,6 +50,7 @@ logger = logging.getLogger(__name__)
 # Lazy imports for optional backends
 _vllm_backend_class = None
 _remote_backend_class = None
+_bitnet_backend_class = None
 
 
 def _get_vllm_backend_class():
@@ -69,6 +71,16 @@ def _get_remote_backend_class():
 
         _remote_backend_class = RemoteOpenAIBackend
     return _remote_backend_class
+
+
+def _get_bitnet_backend_class():
+    """Lazy import BitNet backend."""
+    global _bitnet_backend_class
+    if _bitnet_backend_class is None:
+        from .bitnet import BitNetBackend
+
+        _bitnet_backend_class = BitNetBackend
+    return _bitnet_backend_class
 
 
 def create_backend(
@@ -140,6 +152,9 @@ def create_backend(
             return _create_remote_backend(
                 model_or_path, config.remote_openai
             )
+
+        elif backend_type == BackendType.BITNET:
+            return _create_bitnet_backend(model_or_path, config.bitnet)
 
         else:
             raise ValueError(f"Unknown backend type: {backend_type}")
@@ -219,6 +234,24 @@ def _create_remote_backend(
     )
 
 
+def _create_bitnet_backend(
+    model_path: str,
+    config: "BitNetConfig",
+) -> InferenceBackend:
+    """Create BitNet CPU backend."""
+    BitNetBackend = _get_bitnet_backend_class()
+
+    # model_path should be a string path to GGUF file
+    if not isinstance(model_path, str):
+        # If not a string, use config's model_path
+        model_path = config.model_path
+
+    return BitNetBackend(
+        model_path=model_path,
+        config=config,
+    )
+
+
 def is_backend_available(backend_type: BackendType) -> bool:
     """
     Check if a backend type is available.
@@ -249,6 +282,14 @@ def is_backend_available(backend_type: BackendType) -> bool:
         except ImportError:
             return False
 
+    elif backend_type == BackendType.BITNET:
+        # Check if BitNet paths are configured and exist
+        from pathlib import Path
+        config = BitNetConfig.from_env()
+        bitnet_path = Path(config.bitnet_path)
+        model_path = Path(config.model_path)
+        return bitnet_path.exists() and model_path.exists()
+
     return False
 
 
@@ -277,6 +318,7 @@ __all__ = [
     # Config
     "BackendConfig",
     "BackendType",
+    "BitNetConfig",
     "HuggingFaceConfig",
     "VLLMLocalConfig",
     "VLLMRemoteConfig",

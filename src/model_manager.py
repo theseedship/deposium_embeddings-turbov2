@@ -396,6 +396,57 @@ class ModelManager:
             context_length=32768
         )
 
+        # ============================================================
+        # BitNet Models (CPU-only 1-bit quantization)
+        # https://github.com/microsoft/BitNet
+        # Use backend_type="bitnet" for these models
+        # ============================================================
+
+        # BitNet-b1.58-large (700M params, lightweight)
+        # https://huggingface.co/1bitLLM/bitnet_b1_58-large
+        # ~500MB memory, fast inference, good for simple tasks
+        self.configs["bitnet-700m"] = ModelConfig(
+            name="bitnet-700m",
+            type="causal_lm",
+            hub_id=os.getenv("HF_MODEL_BITNET_700M", "1bitLLM/bitnet_b1_58-large"),
+            priority=1,
+            estimated_vram_mb=0,  # CPU only
+            device="cpu",
+            quantize_4bit=False,  # Already 1-bit quantized
+            context_length=2048,
+            backend_type="bitnet"
+        )
+
+        # BitNet-b1.58-2B-4T (2.4B params, general purpose)
+        # https://huggingface.co/1bitLLM/bitnet_b1_58-2B-4T
+        # ~500MB memory, balanced quality/speed
+        self.configs["bitnet-2b"] = ModelConfig(
+            name="bitnet-2b",
+            type="causal_lm",
+            hub_id=os.getenv("HF_MODEL_BITNET_2B", "1bitLLM/bitnet_b1_58-2B-4T"),
+            priority=1,
+            estimated_vram_mb=0,  # CPU only
+            device="cpu",
+            quantize_4bit=False,  # Already 1-bit quantized
+            context_length=2048,
+            backend_type="bitnet"
+        )
+
+        # Llama3-8B-1.58-100B-tokens (8B params, high quality)
+        # https://huggingface.co/HF1BitLLM/Llama3-8B-1.58-100B-tokens
+        # ~1GB memory, best quality for BitNet
+        self.configs["bitnet-llama3-8b"] = ModelConfig(
+            name="bitnet-llama3-8b",
+            type="causal_lm",
+            hub_id=os.getenv("HF_MODEL_BITNET_LLAMA3", "HF1BitLLM/Llama3-8B-1.58-100B-tokens"),
+            priority=1,
+            estimated_vram_mb=0,  # CPU only
+            device="cpu",
+            quantize_4bit=False,  # Already 1-bit quantized
+            context_length=4096,
+            backend_type="bitnet"
+        )
+
     def get_vram_usage_mb(self) -> Tuple[int, int]:
         """
         Get current VRAM usage.

@@ -18,6 +18,7 @@ class BackendType(Enum):
     VLLM_LOCAL = "vllm_local"
     VLLM_REMOTE = "vllm_remote"
     REMOTE_OPENAI = "remote_openai"
+    BITNET = "bitnet"
 
     @classmethod
     def from_string(cls, value: str) -> "BackendType":
@@ -141,6 +142,28 @@ class RemoteOpenAIConfig:
 
 
 @dataclass
+class BitNetConfig:
+    """Configuration for BitNet backend (CPU-only 1-bit quantization)."""
+
+    bitnet_path: str = "/app/BitNet"  # Path to BitNet installation
+    model_path: str = "/app/models/bitnet/model.gguf"  # Path to GGUF model
+    threads: int = 4  # Number of CPU threads
+    context_length: int = 2048  # Maximum context length
+    timeout: float = 120.0  # Generation timeout in seconds
+
+    @classmethod
+    def from_env(cls) -> "BitNetConfig":
+        """Load configuration from environment variables."""
+        return cls(
+            bitnet_path=os.getenv("BITNET_PATH", "/app/BitNet"),
+            model_path=os.getenv("BITNET_MODEL_PATH", "/app/models/bitnet/model.gguf"),
+            threads=int(os.getenv("BITNET_THREADS", "4")),
+            context_length=int(os.getenv("BITNET_CONTEXT_LENGTH", "2048")),
+            timeout=float(os.getenv("BITNET_TIMEOUT", "120.0")),
+        )
+
+
+@dataclass
 class BackendConfig:
     """Master configuration for inference backends."""
 
@@ -151,6 +174,7 @@ class BackendConfig:
     vllm_local: VLLMLocalConfig = field(default_factory=VLLMLocalConfig)
     vllm_remote: VLLMRemoteConfig = field(default_factory=VLLMRemoteConfig)
     remote_openai: RemoteOpenAIConfig = field(default_factory=RemoteOpenAIConfig)
+    bitnet: BitNetConfig = field(default_factory=BitNetConfig)
 
     @classmethod
     def from_env(cls) -> "BackendConfig":
@@ -168,6 +192,7 @@ class BackendConfig:
             vllm_local=VLLMLocalConfig.from_env(),
             vllm_remote=VLLMRemoteConfig.from_env(),
             remote_openai=RemoteOpenAIConfig.from_env(),
+            bitnet=BitNetConfig.from_env(),
         )
 
     @staticmethod
@@ -188,6 +213,10 @@ class BackendConfig:
         if os.getenv("REMOTE_OPENAI_URL"):
             return BackendType.REMOTE_OPENAI
 
+        # Check for BitNet (CPU-only)
+        if os.getenv("BITNET_PATH") or os.getenv("BITNET_MODEL_PATH"):
+            return BackendType.BITNET
+
         # Default to HuggingFace
         return BackendType.HUGGINGFACE
 
@@ -198,5 +227,6 @@ class BackendConfig:
             BackendType.VLLM_LOCAL: self.vllm_local,
             BackendType.VLLM_REMOTE: self.vllm_remote,
             BackendType.REMOTE_OPENAI: self.remote_openai,
+            BackendType.BITNET: self.bitnet,
         }
         return mapping[self.backend_type]

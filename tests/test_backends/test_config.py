@@ -15,6 +15,7 @@ import pytest
 from anthropic_compat.backends.config import (
     BackendConfig,
     BackendType,
+    BitNetConfig,
     HuggingFaceConfig,
     QuantizationType,
     RemoteOpenAIConfig,
@@ -41,6 +42,10 @@ class TestBackendType:
     def test_from_string_remote_openai(self):
         """Test parsing 'remote_openai' string."""
         assert BackendType.from_string("remote_openai") == BackendType.REMOTE_OPENAI
+
+    def test_from_string_bitnet(self):
+        """Test parsing 'bitnet' string."""
+        assert BackendType.from_string("bitnet") == BackendType.BITNET
 
     def test_from_string_case_insensitive(self):
         """Test case-insensitive parsing."""
@@ -293,3 +298,10 @@ class TestBackendConfig:
 
         # Could be VLLM_LOCAL if vllm is installed, otherwise REMOTE_OPENAI
         assert detected in (BackendType.VLLM_LOCAL, BackendType.REMOTE_OPENAI)
+
+    def test_get_active_config_bitnet(self):
+        """Test getting active config for BitNet."""
+        config = BackendConfig(backend_type=BackendType.BITNET)
+        active = config.get_active_config()
+
+        assert isinstance(active, BitNetConfig)

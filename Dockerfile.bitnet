@@ -1,0 +1,104 @@
+# Dockerfile.bitnet - Multi-stage build for BitNet CPU inference
+#
+# BitNet provides 1-bit quantization for efficient CPU-only LLM inference:
+# - 2-6x speedup vs FP16
+# - 70-80% energy reduction
+# - Minimal memory (~500MB for 2.4B model)
+#
+# Usage:
+#   docker build -f Dockerfile.bitnet -t deposium-bitnet .
+#   docker run -p 11435:11435 -e LLM_BACKEND=bitnet deposium-bitnet
+#
+# Environment variables:
+#   - BITNET_MODEL: Which model to download (default: bitnet-2b)
+#   - BITNET_THREADS: CPU threads for inference (default: 4)
+#   - BITNET_CONTEXT_LENGTH: Max context (default: 2048)
+
+# =============================================================================
+# Stage 1: Build BitNet
+# =============================================================================
+FROM python:3.11-slim as bitnet-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    clang \
+    git \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone BitNet repository
+WORKDIR /build
+RUN git clone --depth 1 https://github.com/microsoft/BitNet.git
+
+# Build BitNet with optimizations
+WORKDIR /build/BitNet
+RUN pip install --no-cache-dir -r requirements.txt && \
+    python setup_env.py --hf-repo HF1BitLLM/Llama3-8B-1.58-100B-tokens -q i2_s
+
+# Download model based on environment (default: BitNet-b1.58-2B-4T)
+ARG BITNET_MODEL=bitnet-2b
+RUN if [ "$BITNET_MODEL" = "bitnet-700m" ]; then \
+        python setup_env.py --hf-repo 1bitLLM/bitnet_b1_58-large -q i2_s; \
+    elif [ "$BITNET_MODEL" = "bitnet-llama3-8b" ]; then \
+        python setup_env.py --hf-repo HF1BitLLM/Llama3-8B-1.58-100B-tokens -q i2_s; \
+    else \
+        python setup_env.py --hf-repo 1bitLLM/bitnet_b1_58-2B-4T -q i2_s; \
+    fi
+
+# =============================================================================
+# Stage 2: Runtime image
+# =============================================================================
+FROM python:3.11-slim as runtime
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user for security
+RUN useradd -m -u 1000 app
+
+# Set working directory
+WORKDIR /app
+
+# Copy BitNet installation
+COPY --from=bitnet-builder /build/BitNet /app/BitNet
+
+# Copy application code
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY tests/ ./tests/
+
+# Create model directory and copy model
+RUN mkdir -p /app/models/bitnet
+COPY --from=bitnet-builder /build/BitNet/models/ /app/models/bitnet/
+
+# Set environment variables for BitNet backend
+ENV LLM_BACKEND=bitnet
+ENV BITNET_PATH=/app/BitNet
+ENV BITNET_MODEL_PATH=/app/models/bitnet/model.gguf
+ENV BITNET_THREADS=4
+ENV BITNET_CONTEXT_LENGTH=2048
+ENV BITNET_TIMEOUT=120.0
+
+# Configure Python
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app/src
+
+# Expose API port
+EXPOSE 11435
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import httpx; httpx.get('http://localhost:11435/health')" || exit 1
+
+# Switch to non-root user
+USER app
+
+# Default command: run the API server
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "11435"]
