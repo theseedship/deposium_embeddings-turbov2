@@ -1,16 +1,18 @@
 # Deposium Embeddings TurboV2
 
-Ultra-fast embeddings, reranking, vision-language, and audio transcription service for production deployments.
+Ultra-fast embeddings, reranking, vision-language, audio transcription, and LLM inference service for production deployments.
 
 ## Features
 
-- **15+ Models** - Embeddings, reranking, document classification, OCR, audio transcription
+- **15+ Models** - Embeddings, reranking, document classification, OCR, audio transcription, LLM
+- **Anthropic-compatible API** - `/v1/messages` endpoint for Claude Code and other clients
 - **500-1000x faster** than full LLMs for embeddings
 - **Audio Transcription** - Whisper via faster-whisper (4x faster than OpenAI)
-- **Ollama-compatible API** - drop-in replacement
+- **Ollama-compatible API** - drop-in replacement for embeddings/reranking
+- **Multiple LLM Backends** - HuggingFace, vLLM, BitNet (CPU-only), Remote OpenAI
 - **Dynamic VRAM Management** - lazy loading, LRU cache, auto-unloading
-- **4-bit Quantization** - NF4 for rerankers (70% VRAM reduction)
-- **FastAPI** backend with health checks
+- **4-bit Quantization** - NF4 for rerankers and LLMs (70% VRAM reduction)
+- **FastAPI** backend with health checks and API key authentication
 
 ---
 
@@ -59,6 +61,46 @@ Ultra-fast embeddings, reranking, vision-language, and audio transcription servi
 - Word-level timestamps
 - Voice Activity Detection (VAD)
 - Translate to English
+
+### LLM Inference (Anthropic-compatible)
+
+| Model | Backend | Device | VRAM | Speed | Use Case |
+|-------|---------|--------|------|-------|----------|
+| **qwen2.5-coder-7b** | HuggingFace/vLLM | GPU | ~4.5GB (4-bit) | 20-200 tok/s | Code generation, chat |
+| **bitnet-2b** | BitNet | CPU | ~500MB | 10-20 tok/s | CPU-only deployments |
+| **bitnet-8b** | BitNet | CPU | ~1GB | 3-8 tok/s | Higher quality on CPU |
+
+**Backends:**
+
+| Backend | Device | Throughput | Use Case |
+|---------|--------|------------|----------|
+| **HuggingFace** | GPU | 20-40 tok/s | Default, simple setup |
+| **vLLM** | GPU | 100-200 tok/s | High throughput, continuous batching |
+| **BitNet** | CPU | 5-20 tok/s | Railway, edge, no GPU |
+| **Remote OpenAI** | Cloud | Varies | External API providers |
+
+---
+
+## Authentication
+
+API key authentication is optional but recommended for production.
+
+```bash
+# Set API key in environment
+export EMBEDDINGS_API_KEY="your-secret-key"
+
+# Use in requests
+curl -X POST http://localhost:11435/api/embed \
+  -H "X-API-Key: your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"m2v-bge-m3-1024d","input":"Hello"}'
+
+# Or use Authorization header (Anthropic-style)
+curl -X POST http://localhost:11435/v1/messages \
+  -H "Authorization: Bearer your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5-coder-7b","max_tokens":100,"messages":[{"role":"user","content":"Hello"}]}'
+```
 
 ---
 
@@ -211,6 +253,49 @@ curl -X POST http://localhost:11435/api/audio/embed \
 }
 ```
 
+### `POST /v1/messages`
+Anthropic-compatible chat completion (LLM inference)
+
+```bash
+curl -X POST http://localhost:11435/v1/messages \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-coder-7b",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "Write a Python function to sort a list"}
+    ]
+  }'
+```
+
+**Response:**
+```json
+{
+  "id": "msg_abc123",
+  "type": "message",
+  "role": "assistant",
+  "content": [{"type": "text", "text": "Here's a Python function..."}],
+  "model": "qwen2.5-coder-7b",
+  "stop_reason": "end_turn",
+  "usage": {"input_tokens": 15, "output_tokens": 150}
+}
+```
+
+**Features:**
+- Streaming support (`"stream": true`)
+- Tool/function calling
+- System prompts
+- Temperature, top_p, top_k sampling
+
+### `GET /v1/models`
+List available LLM models
+
+```bash
+curl http://localhost:11435/v1/models \
+  -H "Authorization: Bearer YOUR_KEY"
+```
+
 ---
 
 ## Docker Usage
@@ -334,6 +419,31 @@ For n8n-nodes-ollama-reranker:
 ## Environment Variables
 
 ```bash
+# Authentication (optional)
+EMBEDDINGS_API_KEY=your-secret-key
+
+# Server config
+PORT=11435
+HOST=0.0.0.0
+
+# LLM Backend selection
+LLM_BACKEND=huggingface  # huggingface | vllm_local | vllm_remote | bitnet | remote_openai
+
+# HuggingFace backend options
+HF_QUANTIZATION=bitsandbytes
+HF_LOAD_4BIT=true
+HF_FLASH_ATTENTION=true
+
+# vLLM options (high throughput)
+VLLM_GPU_MEMORY_UTILIZATION=0.90
+VLLM_TENSOR_PARALLEL_SIZE=1
+VLLM_MAX_MODEL_LEN=32768
+
+# BitNet options (CPU-only)
+BITNET_PATH=/path/to/BitNet
+BITNET_MODEL_PATH=/path/to/model.gguf
+BITNET_THREADS=4
+
 # Model HuggingFace IDs (optional overrides)
 HF_MODEL_M2V_BGE_M3=tss-deposium/m2v-bge-m3-1024d
 HF_MODEL_BGE_M3_ONNX=gpahal/bge-m3-onnx-int8
@@ -342,10 +452,6 @@ HF_MODEL_QWEN3_EMBED=Qwen/Qwen3-Embedding-0.6B
 HF_MODEL_MXBAI_2D=mixedbread-ai/mxbai-embed-2d-large-v1
 HF_MODEL_MXBAI_RERANK=mixedbread-ai/mxbai-rerank-base-v2
 HF_MODEL_LFM25_VL=LiquidAI/LFM2.5-VL-1.6B
-
-# Server config
-PORT=11435
-HOST=0.0.0.0
 ```
 
 ---
@@ -353,9 +459,13 @@ HOST=0.0.0.0
 ## References
 
 - [CHANGELOG](CHANGELOG.md) - Release history
+- [Inference Backends](docs/inference-fp4.md) - LLM backend comparison and configuration
 - [Model2Vec](https://github.com/MinishLab/model2vec)
 - [mxbai-embed-2d](https://huggingface.co/mixedbread-ai/mxbai-embed-2d-large-v1)
 - [mxbai-rerank-v2](https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v2)
 - [mxbai-rerank-xsmall](https://huggingface.co/mixedbread-ai/mxbai-rerank-xsmall-v1)
 - [LFM2.5-VL](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B)
+- [Microsoft BitNet](https://github.com/microsoft/BitNet) - CPU-only 1-bit inference
+- [vLLM](https://docs.vllm.ai/) - High-throughput LLM serving
 - [Ollama API Docs](https://github.com/ollama/ollama/blob/main/docs/api.md)
+- [Anthropic API Reference](https://docs.anthropic.com/en/api/messages)

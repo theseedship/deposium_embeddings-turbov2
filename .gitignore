@@ -83,3 +83,40 @@ mteb_results_*/
 
 # Pip artifacts
 =*
+
+# =============================================================================
+# Publication exclusions - keep locally, exclude from public repo
+# =============================================================================
+
+# Test scripts with credentials or internal use
+test_classifier_api.py
+test_graph_api.py
+test_real_image.py
+benchmark_embeddings.py
+compare_models.py
+
+# Unknown/internal images
+contrat.png
+graph.png
+
+# Obsolete documentation
+DEPLOYMENT_SUCCESS.md
+HUGGINGFACE_PUBLICATION_SUMMARY.md
+HUGGINGFACE_README.md
+
+# Research archives (internal research history)
+research-archives/
+
+# Internal analysis reports
+docs/analysis/
+
+# Integration troubleshooting (internal)
+docs/integrations/FIX_HUGGINGFACE_SPACE.md
+docs/integrations/QUICK_FIX_BOTH_SPACES.md
+docs/integrations/SOLUTION_GPU_5GB.md
+
+# Dated deployment status
+docs/guides/deployment/DEPLOYMENT_STATUS.md
+
+# Completed migrations
+docs/NUMPY_2_MIGRATION_TRACKING.md
