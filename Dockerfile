@@ -37,10 +37,28 @@ ENV DEFAULT_EMBEDDING_MODEL=m2v-bge-m3-1024d \
 # Note: Using only HF_HOME (TRANSFORMERS_CACHE is deprecated in transformers v5)
 ENV HF_HOME=/app/models
 
+# GPU Support: conditional PyTorch installation (CUDA vs CPU-only wheel)
+# Usage: docker build --build-arg ENABLE_GPU=true for GPU support
+ARG ENABLE_GPU=false
+
 # Install Python dependencies
 WORKDIR /app
 COPY requirements.txt .
-# --system flag installs into system python, avoiding venv overhead in Docker
+
+# Step 1: Install PyTorch from correct index (CUDA 12.6 or CPU-only)
+# This must happen BEFORE requirements.txt to avoid pulling the wrong torch wheel
+# Note: cu126 supports CUDA 12.6+ drivers (torch 2.8+ dropped cu124)
+RUN if [ "$ENABLE_GPU" = "true" ]; then \
+        echo "Installing PyTorch with CUDA 12.6 support..." && \
+        uv pip install --system --no-cache "torch>=2.8.0" \
+            --index-url https://download.pytorch.org/whl/cu126; \
+    else \
+        echo "Installing PyTorch CPU-only..." && \
+        uv pip install --system --no-cache "torch>=2.8.0" \
+            --index-url https://download.pytorch.org/whl/cpu; \
+    fi
+
+# Step 2: Install remaining deps (torch already satisfied from step 1, will be skipped)
 RUN uv pip install --system --no-cache -r requirements.txt
 
 # Copy application

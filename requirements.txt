@@ -9,8 +9,9 @@ numpy>=2.0.0  # PyTorch 2.8+ is compatible with NumPy 2.x
 safetensors==0.6.2
 Pillow==12.0.0  # Note: Wheels 3-5x larger than v11
 
-# PyTorch (security: CVE-2025-3730, CVE-2025-2953 fixed in 2.8.0)
-torch>=2.8.0
+# PyTorch: Installed separately in Dockerfile with conditional CUDA/CPU index
+# See Dockerfile ARG ENABLE_GPU for details (CVE-2025-3730, CVE-2025-2953 fixed in 2.8.0)
+# DO NOT add torch here — it would pull the default (CUDA) wheel and conflict
 
 # Transformers ecosystem (security: 6 ReDoS CVEs fixed in 4.53.0)
 transformers>=4.53.0  # Compatible with optimum 1.25.x + sentence-transformers 5.1.2
