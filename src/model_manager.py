@@ -450,12 +450,18 @@ class ModelManager:
     def get_vram_usage_mb(self) -> Tuple[int, int]:
         """
         Get current VRAM usage.
-        
+
         Returns:
             (used_mb, free_mb)
         """
         if not torch.cuda.is_available():
-            return (0, 0)
+            # CPU mode: use estimated VRAM from loaded models so that
+            # _make_room_for_model() can correctly decide whether models
+            # can coexist.  Returning (0, 0) caused every load to evict
+            # all previously-loaded models — breaking embed + rerank
+            # coexistence and triggering OOM during the swap.
+            used = sum(self.vram_usage.values())
+            return (used, self.max_vram_mb - used)
             
         try:
             # Try nvidia-smi first (more accurate)
