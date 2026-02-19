@@ -219,8 +219,3 @@ async def generate_sse_stream(
                 "message": str(e)
             }
         })
-
-
-def create_ping_event() -> str:
-    """Create a ping event for keep-alive."""
-    return format_sse_event("ping", {"type": "ping"})

@@ -199,11 +199,6 @@ class MessageStopEvent(BaseModel):
     type: Literal["message_stop"] = "message_stop"
 
 
-class PingEvent(BaseModel):
-    """Keep-alive ping event."""
-    type: Literal["ping"] = "ping"
-
-
 class ErrorEvent(BaseModel):
     """Error event."""
     type: Literal["error"] = "error"
@@ -218,6 +213,5 @@ SSEEvent = Union[
     ContentBlockStopEvent,
     MessageDeltaEvent,
     MessageStopEvent,
-    PingEvent,
     ErrorEvent,
 ]
