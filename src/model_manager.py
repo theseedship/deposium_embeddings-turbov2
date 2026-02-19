@@ -473,16 +473,16 @@ class ModelManager:
             if result.returncode == 0:
                 used, free = map(int, result.stdout.strip().split(','))
                 return (used, free)
-        except:
+        except Exception:
             pass
-            
+
         # Fallback to PyTorch
         try:
             used = torch.cuda.memory_allocated() // (1024 * 1024)
             reserved = torch.cuda.memory_reserved() // (1024 * 1024)
             # Estimate based on reserved memory
             return (reserved, self.max_vram_mb - reserved)
-        except:
+        except Exception:
             return (0, self.max_vram_mb)
             
     def _unload_model(self, name: str):
@@ -552,7 +552,7 @@ class ModelManager:
                         s = str(ref)
                         if len(s) > 200: s = s[:200] + "..."
                         logger.warning(f"    Value: {s}")
-                    except:
+                    except Exception:
                         pass
         except Exception as e:
             logger.warning(f"Error checking refcount: {e}")
@@ -568,13 +568,13 @@ class ModelManager:
         # Aggressive cleanup for SentenceTransformer
         if hasattr(model, "_modules"):
             try:
-                for name, module in model._modules.items():
+                for module_name, module in model._modules.items():
                     # Move to CPU to be sure
                     if hasattr(module, "cpu"):
                         module.cpu()
                     # Explicitly delete large attributes if possible
                     if hasattr(module, "auto_model"):
-                        logger.info(f"Deleting auto_model from module {name}")
+                        logger.info(f"Deleting auto_model from module {module_name}")
                         del module.auto_model
                 model._modules.clear()
             except Exception as e:
@@ -794,7 +794,7 @@ class ModelManager:
                     # Check if using SDPA (Scaled Dot Product Attention)
                     if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
                         logger.info(f"ℹ️  {name} using PyTorch SDPA (Flash Attention backend if available)")
-                except:
+                except Exception:
                     pass
 
             elif config.type == "sentence_transformer_2d":
