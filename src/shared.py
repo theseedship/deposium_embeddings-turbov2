@@ -13,7 +13,7 @@ model_manager = None
 
 # Default model names from environment variables
 DEFAULT_EMBEDDING_MODEL = os.getenv("DEFAULT_EMBEDDING_MODEL", "m2v-bge-m3-1024d")
-DEFAULT_RERANK_MODEL = os.getenv("DEFAULT_RERANK_MODEL", "qwen3-rerank")
+DEFAULT_RERANK_MODEL = os.getenv("DEFAULT_RERANK_MODEL", "mxbai-rerank-v2")
 
 # Whisper availability
 try:
