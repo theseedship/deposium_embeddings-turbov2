@@ -101,5 +101,6 @@ async def initialize_models():
                 logger.error(f"Error in model cleanup loop: {e}")
                 await asyncio.sleep(60)
 
-    asyncio.create_task(model_cleanup_loop())
+    # Store task reference to prevent garbage collection (asyncio holds only a weak ref)
+    app.state.cleanup_task = asyncio.create_task(model_cleanup_loop())
     logger.info("Model Manager initialized! Models will load on first use.")
