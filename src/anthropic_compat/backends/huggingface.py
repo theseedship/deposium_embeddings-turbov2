@@ -147,6 +147,11 @@ class HuggingFaceBackend(InferenceBackend):
         generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
         output_tokens = len(generated_ids)
 
+        # Free CUDA tensors immediately
+        del inputs, outputs, generated_ids
+        if self.device == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         elapsed_ms = (time.time() - start_time) * 1000
         tokens_per_second = output_tokens / (elapsed_ms / 1000) if elapsed_ms > 0 else 0
 
@@ -247,6 +252,11 @@ class HuggingFaceBackend(InferenceBackend):
                 break
 
         thread.join()
+
+        # Free CUDA tensors after streaming completes
+        del inputs
+        if self.device == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Final chunk
         finish_reason = "stop"

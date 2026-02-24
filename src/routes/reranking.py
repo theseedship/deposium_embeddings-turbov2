@@ -1,6 +1,8 @@
 """Document reranking routes."""
+import gc
 import logging
 import numpy as np
+import torch
 from fastapi import APIRouter, Depends, HTTPException
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
@@ -78,11 +80,18 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(shared
         # SentenceTransformer models (bi-encoder with cosine similarity)
         elif isinstance(selected_model, SentenceTransformer):
             # Encode query and documents
-            query_emb = selected_model.encode(request.query, convert_to_tensor=True)
-            doc_embs = selected_model.encode(request.documents, convert_to_tensor=True)
+            with torch.inference_mode():
+                query_emb = selected_model.encode(request.query, convert_to_tensor=True)
+                doc_embs = selected_model.encode(request.documents, convert_to_tensor=True)
 
-            # Calculate cosine similarity scores
-            scores = cos_sim(query_emb, doc_embs)[0].cpu().tolist()
+                # Calculate cosine similarity scores
+                scores = cos_sim(query_emb, doc_embs)[0].cpu().tolist()
+
+            # Free CUDA tensors immediately
+            del query_emb, doc_embs
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             # Create results with original indices
             results = [

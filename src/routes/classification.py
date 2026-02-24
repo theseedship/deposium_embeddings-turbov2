@@ -1,8 +1,10 @@
 """Document classification routes."""
 import base64
+import gc
 import io
 import logging
 import time
+import torch
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image
 
@@ -77,10 +79,17 @@ Answer with ONLY one word: LOW or HIGH"""
             ).to(vlm_model.device)
 
             start_time = time.time()
-            outputs = vlm_model.generate(**inputs, max_new_tokens=10)
+            with torch.inference_mode():
+                outputs = vlm_model.generate(**inputs, max_new_tokens=10)
             latency_ms = (time.time() - start_time) * 1000
 
             response = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+            # Free CUDA tensors immediately
+            del inputs, outputs
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             # Parse response
             is_high = "HIGH" in response.upper()
@@ -172,10 +181,17 @@ Answer with ONLY one word: LOW or HIGH"""
             ).to(vlm_model.device)
 
             start_time = time.time()
-            outputs = vlm_model.generate(**inputs, max_new_tokens=10)
+            with torch.inference_mode():
+                outputs = vlm_model.generate(**inputs, max_new_tokens=10)
             latency_ms = (time.time() - start_time) * 1000
 
             response = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+            # Free CUDA tensors immediately
+            del inputs, outputs
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             # Parse response
             is_high = "HIGH" in response.upper()
