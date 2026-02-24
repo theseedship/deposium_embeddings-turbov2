@@ -10,6 +10,7 @@ Uses vLLM for high-performance inference with:
 
 import asyncio
 import logging
+import os
 from typing import Any, Dict, Generator, List, Optional
 
 from .base import (
@@ -91,13 +92,15 @@ class VLLMLocalBackend(InferenceBackend):
         logger.info(f"Initializing vLLM engine for {self.model_name}")
 
         # Build engine kwargs
+        # trust_remote_code needed for Qwen models; controlled via HF_TRUST_REMOTE_CODE env
+        _trust = os.getenv("HF_TRUST_REMOTE_CODE", "false").lower() == "true" or "qwen" in self.model_name.lower()
         engine_kwargs = {
             "model": self.model_name,
             "tokenizer": self.tokenizer_name,
             "tensor_parallel_size": self.config.tensor_parallel_size,
             "gpu_memory_utilization": self.config.gpu_memory_utilization,
             "dtype": self.config.dtype,
-            "trust_remote_code": True,
+            "trust_remote_code": _trust,
             "enforce_eager": self.config.enforce_eager,
             "enable_prefix_caching": self.config.enable_prefix_caching,
             "max_num_seqs": self.config.max_num_seqs,
@@ -293,13 +296,14 @@ class VLLMLocalBackend(InferenceBackend):
         """
         if self._async_engine is None:
             # Initialize async engine
+            _trust = os.getenv("HF_TRUST_REMOTE_CODE", "false").lower() == "true" or "qwen" in self.model_name.lower()
             engine_args = AsyncEngineArgs(
                 model=self.model_name,
                 tokenizer=self.tokenizer_name,
                 tensor_parallel_size=self.config.tensor_parallel_size,
                 gpu_memory_utilization=self.config.gpu_memory_utilization,
                 dtype=self.config.dtype,
-                trust_remote_code=True,
+                trust_remote_code=_trust,
                 max_num_seqs=self.config.max_num_seqs,
             )
             if self.config.quantization:

@@ -124,9 +124,11 @@ async def process_vision(request: VisionRequest, api_key: str = Depends(shared.v
             latency_ms=round(latency_ms, 2)
         )
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Vision processing error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Vision processing error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Vision processing failed")
 
 
 @router.post("/api/vision/file")
@@ -232,6 +234,8 @@ async def process_vision_file(
             "latency_ms": round(latency_ms, 2)
         }
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Vision file processing error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Vision file processing error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Vision processing failed")

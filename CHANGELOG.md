@@ -13,6 +13,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.0] - 2026-02-24
+
+### Added
+- **LLM Inference (Anthropic-compatible API)**
+  - `POST /v1/messages` - Chat completion (streaming, tool calling)
+  - `GET /v1/models` - List available LLM models
+  - Backends: HuggingFace, vLLM, BitNet (CPU), Remote OpenAI
+  - Models: qwen2.5-coder-7b/3b/1.5b, bitnet-700m/2b/llama3-8b
+
+- **BitNet CPU Backend** - 1-bit quantized inference without GPU
+  - Microsoft BitNet integration via subprocess
+  - ~500MB RAM for 2.4B model, 10-20 tok/s
+  - Ideal for Railway/edge deployments
+
+- **mxbai-rerank-xsmall** - Lightweight DeBERTa V1 reranker (~200MB)
+
+### Fixed
+- **CRITICAL: CUDA memory leak** - VRAM grew from 358MB to 5807MB over 29h
+  - Root cause: inference tensors never freed between requests
+  - Added `torch.inference_mode()` to vision, classification, reranking routes
+  - Added explicit `del inputs, outputs` + `gc.collect()` + `torch.cuda.empty_cache()`
+  - Fixed 7 leak points across 4 files (vision.py, classification.py, reranking.py, huggingface.py)
+
+- **Security hardening**
+  - Restrict `trust_remote_code` to whitelisted models only
+  - Add input size limits (max texts, max document count, max base64 size)
+  - Sanitize error messages (no internal paths leaked to clients)
+  - Add `torch.inference_mode()` to all remaining encode() paths
+
+### Changed
+- README updated with LLM backends, authentication docs, /v1/messages endpoint
+- .gitignore updated to exclude internal docs from publication
+
+---
+
 ## [3.1.0] - 2026-01-27
 
 ### Added

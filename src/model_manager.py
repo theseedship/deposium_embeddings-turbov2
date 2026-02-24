@@ -633,13 +633,27 @@ class ModelManager:
             if free_mb >= required_mb:
                 break
 
+    # Models that require trust_remote_code for custom architectures.
+    # All other models default to trust_remote_code=False for security.
+    TRUSTED_REMOTE_CODE_PREFIXES = (
+        "Qwen/",           # Qwen models use custom tokenizer/model code
+        "LiquidAI/",       # LFM2.5-VL custom architecture
+        "mixedbread-ai/",  # mxbai models use custom pooling
+    )
+
+    def _trust_remote_code(self, hub_id: str) -> bool:
+        """Check if a model hub_id is whitelisted for trust_remote_code."""
+        if os.getenv("HF_TRUST_REMOTE_CODE", "").lower() == "true":
+            return True  # Explicit env override
+        return any(hub_id.startswith(prefix) for prefix in self.TRUSTED_REMOTE_CODE_PREFIXES)
+
     def _load_model(self, name: str) -> Any:
         """
         Load a model into memory.
-        
+
         Args:
             name: Model name
-            
+
         Returns:
             Loaded model
         """
@@ -745,7 +759,7 @@ class ModelManager:
                             # Load with quantization
                             model = SentenceTransformer(
                                 config.hub_id,
-                                trust_remote_code=True,
+                                trust_remote_code=self._trust_remote_code(config.hub_id),
                                 device=config.device,
                                 model_kwargs={
                                     "quantization_config": quantization_config,
@@ -764,7 +778,7 @@ class ModelManager:
                         logger.info(f"Loading {name} with float16 precision for memory optimization")
                         model = SentenceTransformer(
                             config.hub_id,
-                            trust_remote_code=True,
+                            trust_remote_code=self._trust_remote_code(config.hub_id),
                             device=config.device,
                             model_kwargs={
                                 "torch_dtype": torch.float16
@@ -775,7 +789,7 @@ class ModelManager:
                     # Standard loading for other models
                     model = SentenceTransformer(
                         config.hub_id,
-                        trust_remote_code=True,
+                        trust_remote_code=self._trust_remote_code(config.hub_id),
                         device=config.device
                     )
                     logger.info(f"✅ {name} loaded (SentenceTransformer)")
@@ -806,7 +820,7 @@ class ModelManager:
                 logger.info(f"Loading 2D Matryoshka model {name}...")
                 model = SentenceTransformer(
                     config.hub_id,
-                    trust_remote_code=True,
+                    trust_remote_code=self._trust_remote_code(config.hub_id),
                     device=config.device
                 )
 
@@ -840,7 +854,7 @@ class ModelManager:
                 model_kwargs = {
                     "torch_dtype": torch.bfloat16 if config.device == "cuda" else torch.float32,
                     "low_cpu_mem_usage": True,
-                    "trust_remote_code": True,
+                    "trust_remote_code": self._trust_remote_code(config.hub_id),
                 }
 
                 if config.device == "cuda":
@@ -854,7 +868,7 @@ class ModelManager:
                 # Load processor (tokenizer + image processor)
                 vlm_processor = AutoProcessor.from_pretrained(
                     config.hub_id,
-                    trust_remote_code=True
+                    trust_remote_code=self._trust_remote_code(config.hub_id)
                 )
 
                 # Move to device if CPU
@@ -953,7 +967,7 @@ class ModelManager:
                 model_kwargs = {
                     "torch_dtype": torch.float16,
                     "low_cpu_mem_usage": True,
-                    "trust_remote_code": True,
+                    "trust_remote_code": self._trust_remote_code(config.hub_id),
                 }
 
                 # Apply 4-bit quantization if enabled and on CUDA
@@ -984,7 +998,7 @@ class ModelManager:
                 # Load tokenizer
                 tokenizer = AutoTokenizer.from_pretrained(
                     config.hub_id,
-                    trust_remote_code=True
+                    trust_remote_code=self._trust_remote_code(config.hub_id)
                 )
 
                 # Ensure pad token is set

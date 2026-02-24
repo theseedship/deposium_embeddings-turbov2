@@ -51,7 +51,7 @@ class HuggingFaceConfig:
     load_in_4bit: bool = True
     load_in_8bit: bool = False
     use_flash_attention: bool = True
-    trust_remote_code: bool = True
+    trust_remote_code: bool = False  # Default to False for security; override with HF_TRUST_REMOTE_CODE=true
 
     @classmethod
     def from_env(cls) -> "HuggingFaceConfig":
@@ -63,7 +63,7 @@ class HuggingFaceConfig:
             load_in_4bit=os.getenv("HF_LOAD_4BIT", "true").lower() == "true",
             load_in_8bit=os.getenv("HF_LOAD_8BIT", "false").lower() == "true",
             use_flash_attention=os.getenv("HF_FLASH_ATTENTION", "true").lower() == "true",
-            trust_remote_code=os.getenv("HF_TRUST_REMOTE_CODE", "true").lower() == "true",
+            trust_remote_code=os.getenv("HF_TRUST_REMOTE_CODE", "false").lower() == "true",
         )
 
 

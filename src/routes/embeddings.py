@@ -1,5 +1,6 @@
 """Embedding generation routes."""
 import logging
+import torch
 from fastapi import APIRouter, Depends, HTTPException
 
 from .. import shared
@@ -29,7 +30,8 @@ async def create_embedding(request: EmbedRequest, api_key: str = Depends(shared.
         selected_model = shared.model_manager.get_model(request.model)
 
         # Generate embeddings (Model2Vec or SentenceTransformer)
-        embeddings = selected_model.encode(texts, show_progress_bar=False)
+        with torch.inference_mode():
+            embeddings = selected_model.encode(texts, show_progress_bar=False)
 
         # Handle 2D Matryoshka dimension truncation
         # Models like mxbai-embed-2d-fast/turbo have _truncate_dims attribute
@@ -57,9 +59,11 @@ async def create_embedding(request: EmbedRequest, api_key: str = Depends(shared.
 
         return response
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Embedding error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Embedding error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Embedding generation failed")
 
 
 @router.post("/api/embeddings")
