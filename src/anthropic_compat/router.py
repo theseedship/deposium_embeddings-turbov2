@@ -223,10 +223,10 @@ async def create_message(
         )
 
     except Exception as e:
-        logger.error(f"Error processing message: {e}")
+        logger.error(f"Error processing message: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Generation failed: {str(e)}"
+            detail="Generation failed"
         )
 
 

@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.1] - 2026-02-24
+
+### Added
+- **Rate limiting** - SlowAPI middleware (200 req/min per IP, configurable per-route)
+- **CORS middleware** - Env-configurable via `CORS_ALLOWED_ORIGINS` (comma-separated)
+- **Graceful shutdown handler** - Cancels background tasks, unloads all models, flushes CUDA cache on SIGTERM
+- **`run_in_executor` for all blocking sync calls** - Offloads CPU/GPU-heavy inference to thread pool, prevents event loop blocking under concurrent requests
+
+### Fixed
+- **Error information disclosure** - Fixed 8 remaining `detail=str(e)` leaks in audio.py (3), benchmarks.py (3), classification.py (2)
+- **Event loop blocking** - All `encode()`, `generate()`, `rank()`, `transcribe()` calls now run in thread pool executor across: embeddings.py, reranking.py, vision.py, classification.py, audio.py
+
+### Changed
+- `slowapi>=0.1.9` added to requirements.txt
+- `shared.py` now exports `limiter` (SlowAPI) and `run_sync()` helper
+
+---
+
 ## [3.2.0] - 2026-02-24
 
 ### Added

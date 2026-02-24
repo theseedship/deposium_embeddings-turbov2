@@ -2,6 +2,7 @@
 import base64
 import logging
 import time
+import torch
 from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
@@ -82,9 +83,10 @@ async def transcribe_audio_file(
         # Get whisper handler
         handler = shared.get_whisper_handler()
 
-        # Transcribe
+        # Transcribe (CPU-heavy, offload to thread pool)
         start_time = time.perf_counter()
-        result = handler.transcribe(
+        result = await shared.run_sync(
+            handler.transcribe,
             audio=audio_bytes,
             language=language,
             task=task,
@@ -111,8 +113,8 @@ async def transcribe_audio_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Transcription error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Transcription error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Transcription failed")
 
 
 @router.post("/api/transcribe/base64", response_model=AudioTranscribeResponse)
@@ -168,9 +170,10 @@ async def transcribe_audio_base64(
         # Get whisper handler
         handler = shared.get_whisper_handler()
 
-        # Transcribe
+        # Transcribe (CPU-heavy, offload to thread pool)
         start_time = time.perf_counter()
-        result = handler.transcribe(
+        result = await shared.run_sync(
+            handler.transcribe,
             audio=audio_bytes,
             language=request.language,
             task=request.task,
@@ -197,8 +200,8 @@ async def transcribe_audio_base64(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Transcription error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Transcription error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Transcription failed")
 
 
 @router.post("/api/audio/embed", response_model=AudioEmbedResponse)
@@ -256,26 +259,29 @@ async def embed_audio(
     try:
         start_time = time.perf_counter()
 
-        # Step 1: Transcribe audio
+        # Step 1: Transcribe audio (CPU-heavy, offload to thread pool)
         audio_bytes = await file.read()
         handler = shared.get_whisper_handler()
 
-        transcription = handler.transcribe(
+        transcription = await shared.run_sync(
+            handler.transcribe,
             audio=audio_bytes,
             language=language,
             model_size=model_size,
         )
 
-        # Step 2: Generate embeddings from transcribed text
+        # Step 2: Generate embeddings from transcribed text (offload to thread pool)
         embed_model = shared.model_manager.get_model(embedding_model)
-        embeddings = embed_model.encode([transcription.text], show_progress_bar=False)
 
-        # Handle 2D Matryoshka truncation
-        truncate_dims = getattr(embed_model, '_truncate_dims', None)
-        if truncate_dims:
-            embeddings = embeddings[:, :truncate_dims]
+        def _embed_text():
+            with torch.inference_mode():
+                embs = embed_model.encode([transcription.text], show_progress_bar=False)
+            truncate_dims = getattr(embed_model, '_truncate_dims', None)
+            if truncate_dims:
+                embs = embs[:, :truncate_dims]
+            return [emb.tolist() for emb in embs]
 
-        embeddings_list = [emb.tolist() for emb in embeddings]
+        embeddings_list = await shared.run_sync(_embed_text)
 
         latency_ms = (time.perf_counter() - start_time) * 1000
 
@@ -297,5 +303,5 @@ async def embed_audio(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Audio embedding error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Audio embedding error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Audio embedding failed")

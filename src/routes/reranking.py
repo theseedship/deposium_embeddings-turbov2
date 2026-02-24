@@ -8,6 +8,7 @@ from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 
 from .. import shared
+from ..shared import run_sync
 from ..schemas.requests import RerankRequest
 
 logger = logging.getLogger(__name__)
@@ -55,13 +56,15 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(shared
                     detail="mxbai-rerank library not installed. Install with: pip install mxbai-rerank"
                 )
 
-            # Use native cross-encoder reranking
+            # Use native cross-encoder reranking (CPU/GPU-heavy, offload to thread pool)
             top_k = request.top_k if request.top_k else len(request.documents)
-            ranked_results = selected_model.rank(
+
+            ranked_results = await run_sync(
+                selected_model.rank,
                 request.query,
                 request.documents,
                 return_documents=True,
-                top_k=top_k
+                top_k=top_k,
             )
 
             # Convert to our response format
@@ -79,19 +82,22 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(shared
 
         # SentenceTransformer models (bi-encoder with cosine similarity)
         elif isinstance(selected_model, SentenceTransformer):
-            # Encode query and documents
-            with torch.inference_mode():
-                query_emb = selected_model.encode(request.query, convert_to_tensor=True)
-                doc_embs = selected_model.encode(request.documents, convert_to_tensor=True)
+            # Encode query and documents (GPU-heavy, offload to thread pool)
+            def _rerank_biencoder():
+                with torch.inference_mode():
+                    query_emb = selected_model.encode(request.query, convert_to_tensor=True)
+                    doc_embs = selected_model.encode(request.documents, convert_to_tensor=True)
+                    scores = cos_sim(query_emb, doc_embs)[0].cpu().tolist()
 
-                # Calculate cosine similarity scores
-                scores = cos_sim(query_emb, doc_embs)[0].cpu().tolist()
+                # Free CUDA tensors immediately
+                del query_emb, doc_embs
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
-            # Free CUDA tensors immediately
-            del query_emb, doc_embs
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+                return scores
+
+            scores = await run_sync(_rerank_biencoder)
 
             # Create results with original indices
             results = [
@@ -114,14 +120,15 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(shared
 
         # Model2Vec or other embedding models
         else:
-            query_emb = selected_model.encode([request.query], show_progress_bar=False)[0]
-            doc_embs = selected_model.encode(request.documents, show_progress_bar=False)
+            def _rerank_embedding():
+                query_emb = selected_model.encode([request.query], show_progress_bar=False)[0]
+                doc_embs = selected_model.encode(request.documents, show_progress_bar=False)
+                return [
+                    np.dot(query_emb, doc_emb) / (np.linalg.norm(query_emb) * np.linalg.norm(doc_emb))
+                    for doc_emb in doc_embs
+                ]
 
-            # Calculate cosine similarity manually
-            scores = [
-                np.dot(query_emb, doc_emb) / (np.linalg.norm(query_emb) * np.linalg.norm(doc_emb))
-                for doc_emb in doc_embs
-            ]
+            scores = await run_sync(_rerank_embedding)
 
             # Create results with original indices
             results = [

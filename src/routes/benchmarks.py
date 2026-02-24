@@ -25,8 +25,8 @@ async def list_benchmarks(api_key: str = Depends(shared.verify_api_key)):
         runner = get_openbench_runner()
         return await runner.list_available_benchmarks()
     except Exception as e:
-        logger.error(f"Benchmark list error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Benchmark list error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to list benchmarks")
 
 
 @router.post("/api/benchmarks/run")
@@ -74,8 +74,8 @@ async def run_benchmark(request: BenchmarkRequest, api_key: str = Depends(shared
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Benchmark run error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Benchmark run error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Benchmark execution failed")
 
 
 @router.post("/api/benchmarks/corpus-eval")
@@ -116,5 +116,5 @@ async def evaluate_corpus(
         )
         return result.to_dict()
     except Exception as e:
-        logger.error(f"Corpus evaluation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Corpus evaluation error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Corpus evaluation failed")

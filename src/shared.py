@@ -1,12 +1,19 @@
 """
 Shared state and dependencies for all route modules.
 """
+import asyncio
+import functools
 import os
 import logging
 
 from fastapi import HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
+
+# Rate limiter (shared across all routes)
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 # Global model manager instance (set during startup)
 model_manager = None
@@ -72,3 +79,11 @@ async def verify_api_key(request: Request):
 
     logger.info(f"Authentication successful from {host} (method: {auth_method})")
     return token
+
+
+async def run_sync(func, *args, **kwargs):
+    """Run a blocking function in a thread pool executor to avoid blocking the async event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, functools.partial(func, *args, **kwargs)
+    )

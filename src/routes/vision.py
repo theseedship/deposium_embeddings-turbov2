@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image
 
 from .. import shared
+from ..shared import run_sync
 from ..schemas.requests import VisionRequest, VisionResponse
 
 logger = logging.getLogger(__name__)
@@ -85,33 +86,35 @@ async def process_vision(request: VisionRequest, api_key: str = Depends(shared.v
             },
         ]
 
-        # Process inputs
-        inputs = vlm_processor.apply_chat_template(
-            conversation,
-            add_generation_prompt=True,
-            return_tensors="pt",
-            return_dict=True,
-            tokenize=True,
-        ).to(vlm_model.device)
+        # GPU-heavy inference, offload to thread pool
+        def _vlm_generate():
+            inputs = vlm_processor.apply_chat_template(
+                conversation,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+                tokenize=True,
+            ).to(vlm_model.device)
 
-        # Generate response (no_grad prevents computation graph retention)
+            with torch.inference_mode():
+                outputs = vlm_model.generate(**inputs, max_new_tokens=request.max_tokens or 512)
+
+            text = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+            # Free CUDA tensors immediately
+            del inputs, outputs
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            return text
+
         start_time = time.time()
-        with torch.inference_mode():
-            outputs = vlm_model.generate(**inputs, max_new_tokens=request.max_tokens or 512)
+        response_text = await run_sync(_vlm_generate)
         latency_ms = (time.time() - start_time) * 1000
-
-        # Decode response
-        response_text = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
-
-        # Free CUDA tensors immediately
-        del inputs, outputs
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
         # Extract just the assistant's response (remove the prompt echo)
         if "assistant" in response_text.lower():
-            # Try to extract text after "assistant" marker
             parts = response_text.split("assistant")
             if len(parts) > 1:
                 response_text = parts[-1].strip()
@@ -196,29 +199,32 @@ async def process_vision_file(
             },
         ]
 
-        # Process inputs
-        inputs = vlm_processor.apply_chat_template(
-            conversation,
-            add_generation_prompt=True,
-            return_tensors="pt",
-            return_dict=True,
-            tokenize=True,
-        ).to(vlm_model.device)
+        # GPU-heavy inference, offload to thread pool
+        def _vlm_generate_file():
+            inputs = vlm_processor.apply_chat_template(
+                conversation,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+                tokenize=True,
+            ).to(vlm_model.device)
 
-        # Generate response (no_grad prevents computation graph retention)
+            with torch.inference_mode():
+                outputs = vlm_model.generate(**inputs, max_new_tokens=max_tokens)
+
+            text = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+            # Free CUDA tensors immediately
+            del inputs, outputs
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            return text
+
         start_time = time.time()
-        with torch.inference_mode():
-            outputs = vlm_model.generate(**inputs, max_new_tokens=max_tokens)
+        response_text = await run_sync(_vlm_generate_file)
         latency_ms = (time.time() - start_time) * 1000
-
-        # Decode response
-        response_text = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
-
-        # Free CUDA tensors immediately
-        del inputs, outputs
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
         # Extract just the assistant's response
         if "assistant" in response_text.lower():

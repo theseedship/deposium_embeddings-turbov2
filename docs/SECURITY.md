@@ -1,7 +1,7 @@
 # Security Audit & Hardening
 
 Last audit: 2026-02-24
-Status: Hardened (v3.2.0)
+Status: Fully hardened (v3.2.1) - All security items resolved
 
 ---
 
@@ -95,55 +95,50 @@ except Exception as e:
 
 ---
 
-## Remaining Items (Non-blocking)
+## Fixed Items (v3.2.1)
 
-### Rate Limiting (HIGH priority)
+### Rate Limiting (FIXED)
 
-No rate limiting on any endpoint. Recommend adding `slowapi` or similar:
-
-```python
-from slowapi import Limiter
-limiter = Limiter(key_func=get_remote_address)
-
-@router.post("/api/embed")
-@limiter.limit("100/minute")
-async def create_embedding(...):
-```
-
-### CORS Configuration (MEDIUM priority)
-
-No CORS middleware configured. Add based on deployment context:
+SlowAPI middleware with 200 req/min default per IP. Configured in `main.py`:
 
 ```python
-from fastapi.middleware.cors import CORSMiddleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://your-app.domain"],
-    allow_methods=["POST", "GET"],
-    allow_headers=["Authorization", "X-API-Key", "Content-Type"],
-)
+from slowapi.middleware import SlowAPIMiddleware
+app.state.limiter = shared.limiter  # Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+app.add_middleware(SlowAPIMiddleware)
 ```
 
-### Blocking Sync in Async Handlers (MEDIUM priority)
+Per-route overrides available via `@shared.limiter.limit("50/minute")` decorator.
 
-CPU-heavy operations (`encode()`, `generate()`) block the async event loop. Consider `run_in_executor` for high-concurrency scenarios:
+### CORS Configuration (FIXED)
 
-```python
-loop = asyncio.get_event_loop()
-embeddings = await loop.run_in_executor(None, model.encode, texts)
+Env-configurable via `CORS_ALLOWED_ORIGINS` (comma-separated). Default: no cross-origin (empty list).
+
+```bash
+# Production
+CORS_ALLOWED_ORIGINS=https://app.deposium.com,https://admin.deposium.com
+
+# Development
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 ```
 
-### Graceful Shutdown (MEDIUM priority)
+### Blocking Sync in Async Handlers (FIXED)
 
-Background cleanup task not cancelled on SIGTERM. Add shutdown handler:
+All CPU/GPU-heavy operations offloaded to thread pool via `shared.run_sync()`:
 
-```python
-@app.on_event("shutdown")
-async def shutdown():
-    app.state.cleanup_task.cancel()
-    for name in list(model_manager.models.keys()):
-        model_manager._unload_model(name)
-```
+| File | Blocking Call | Status |
+|------|--------------|--------|
+| `routes/embeddings.py` | `model.encode()` | Fixed |
+| `routes/reranking.py` | `model.rank()`, `model.encode()`, `cos_sim()` | Fixed |
+| `routes/vision.py` | `vlm.generate()`, `processor.apply_chat_template()` | Fixed (x2 endpoints) |
+| `routes/classification.py` | `vlm.generate()` | Fixed (x2 VLM paths) |
+| `routes/audio.py` | `handler.transcribe()`, `model.encode()` | Fixed (x3 endpoints) |
+
+### Graceful Shutdown (FIXED)
+
+`@app.on_event("shutdown")` handler in `main.py`:
+1. Cancels background cleanup task
+2. Unloads all loaded models
+3. Clears CUDA cache
 
 ---
 

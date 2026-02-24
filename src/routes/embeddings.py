@@ -4,6 +4,7 @@ import torch
 from fastapi import APIRouter, Depends, HTTPException
 
 from .. import shared
+from ..shared import run_sync
 from ..schemas.requests import EmbedRequest
 
 logger = logging.getLogger(__name__)
@@ -29,18 +30,16 @@ async def create_embedding(request: EmbedRequest, api_key: str = Depends(shared.
         # Get model (lazy loading)
         selected_model = shared.model_manager.get_model(request.model)
 
-        # Generate embeddings (Model2Vec or SentenceTransformer)
-        with torch.inference_mode():
-            embeddings = selected_model.encode(texts, show_progress_bar=False)
+        # Generate embeddings (CPU/GPU-heavy, offload to thread pool)
+        def _encode():
+            with torch.inference_mode():
+                embs = selected_model.encode(texts, show_progress_bar=False)
+            truncate_dims = getattr(selected_model, '_truncate_dims', None)
+            if truncate_dims:
+                embs = embs[:, :truncate_dims]
+            return [emb.tolist() for emb in embs]
 
-        # Handle 2D Matryoshka dimension truncation
-        # Models like mxbai-embed-2d-fast/turbo have _truncate_dims attribute
-        truncate_dims = getattr(selected_model, '_truncate_dims', None)
-        if truncate_dims:
-            # Truncate embeddings to specified dimensions
-            embeddings = embeddings[:, :truncate_dims]
-
-        embeddings_list = [emb.tolist() for emb in embeddings]
+        embeddings_list = await run_sync(_encode)
 
         # Log dimensions for debugging
         dims = len(embeddings_list[0]) if embeddings_list else 0

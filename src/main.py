@@ -5,7 +5,13 @@ All endpoint implementations live in src/routes/ modules.
 Shared state (model_manager, auth) lives in src/shared.py.
 Pydantic schemas live in src/schemas/requests.py.
 """
+import os
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 import torch
 import logging
 import asyncio
@@ -37,6 +43,25 @@ app = FastAPI(
     ),
     version="13.0.0",
 )
+
+# --- CORS Middleware ---
+# Configurable via CORS_ALLOWED_ORIGINS env var (comma-separated)
+# Default: restrict to same-origin only (empty list = no cross-origin)
+_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins else []
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "X-API-Key", "Content-Type"],
+)
+
+# --- Rate Limiting Middleware (slowapi) ---
+# Default: 200 requests/minute per IP (configurable per-route via @limiter.limit)
+app.state.limiter = shared.limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Include all routers
 app.include_router(anthropic_router)
@@ -104,3 +129,34 @@ async def initialize_models():
     # Store task reference to prevent garbage collection (asyncio holds only a weak ref)
     app.state.cleanup_task = asyncio.create_task(model_cleanup_loop())
     logger.info("Model Manager initialized! Models will load on first use.")
+
+
+@app.on_event("shutdown")
+async def graceful_shutdown():
+    """Clean up resources on SIGTERM/SIGINT."""
+    logger.info("Graceful shutdown initiated...")
+
+    # Cancel background cleanup task
+    if hasattr(app.state, "cleanup_task") and app.state.cleanup_task:
+        app.state.cleanup_task.cancel()
+        try:
+            await app.state.cleanup_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Background cleanup task cancelled")
+
+    # Unload all models
+    if shared.model_manager:
+        for name in list(shared.model_manager.models.keys()):
+            try:
+                shared.model_manager._unload_model(name)
+            except Exception as e:
+                logger.warning(f"Error unloading model {name}: {e}")
+        logger.info("All models unloaded")
+
+    # Flush CUDA cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        logger.info("CUDA cache cleared")
+
+    logger.info("Graceful shutdown complete")

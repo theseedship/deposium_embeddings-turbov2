@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image
 
 from .. import shared
+from ..shared import run_sync
 from ..classifier import get_classifier, ClassifyRequest
 
 logger = logging.getLogger(__name__)
@@ -73,23 +74,28 @@ Answer with ONLY one word: LOW or HIGH"""
                 {"type": "text", "text": prompt}
             ]}]
 
-            inputs = vlm_processor.apply_chat_template(
-                conversation, add_generation_prompt=True,
-                return_tensors="pt", return_dict=True, tokenize=True
-            ).to(vlm_model.device)
+            def _vlm_classify_file():
+                inputs = vlm_processor.apply_chat_template(
+                    conversation, add_generation_prompt=True,
+                    return_tensors="pt", return_dict=True, tokenize=True
+                ).to(vlm_model.device)
+
+                with torch.inference_mode():
+                    outputs = vlm_model.generate(**inputs, max_new_tokens=10)
+
+                response = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+                # Free CUDA tensors immediately
+                del inputs, outputs
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+                return response
 
             start_time = time.time()
-            with torch.inference_mode():
-                outputs = vlm_model.generate(**inputs, max_new_tokens=10)
+            response = await run_sync(_vlm_classify_file)
             latency_ms = (time.time() - start_time) * 1000
-
-            response = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
-
-            # Free CUDA tensors immediately
-            del inputs, outputs
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
 
             # Parse response
             is_high = "HIGH" in response.upper()
@@ -112,8 +118,8 @@ Answer with ONLY one word: LOW or HIGH"""
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Classification error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Classification error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Classification failed")
 
 
 @router.post("/api/classify/base64")
@@ -175,23 +181,28 @@ Answer with ONLY one word: LOW or HIGH"""
                 {"type": "text", "text": prompt}
             ]}]
 
-            inputs = vlm_processor.apply_chat_template(
-                conversation, add_generation_prompt=True,
-                return_tensors="pt", return_dict=True, tokenize=True
-            ).to(vlm_model.device)
+            def _vlm_classify_base64():
+                inputs = vlm_processor.apply_chat_template(
+                    conversation, add_generation_prompt=True,
+                    return_tensors="pt", return_dict=True, tokenize=True
+                ).to(vlm_model.device)
+
+                with torch.inference_mode():
+                    outputs = vlm_model.generate(**inputs, max_new_tokens=10)
+
+                response = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
+
+                # Free CUDA tensors immediately
+                del inputs, outputs
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+                return response
 
             start_time = time.time()
-            with torch.inference_mode():
-                outputs = vlm_model.generate(**inputs, max_new_tokens=10)
+            response = await run_sync(_vlm_classify_base64)
             latency_ms = (time.time() - start_time) * 1000
-
-            response = vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
-
-            # Free CUDA tensors immediately
-            del inputs, outputs
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
 
             # Parse response
             is_high = "HIGH" in response.upper()
@@ -214,5 +225,5 @@ Answer with ONLY one word: LOW or HIGH"""
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Classification error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Classification error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Classification failed")
