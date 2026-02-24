@@ -188,4 +188,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Links
 
 - [README](README.md) - API documentation
-- [DEPLOYMENT_SUCCESS](DEPLOYMENT_SUCCESS.md) - VL Classifier deployment notes
+- [Security Audit](docs/SECURITY.md) - Security hardening documentation
