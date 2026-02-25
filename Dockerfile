@@ -69,12 +69,13 @@ COPY src/ ./src/
 # - Binary classification: LOW (simple docs → OCR) vs HIGH (complex docs → VLM)
 # - Performance: 93% accuracy, 100% HIGH recall, ~10ms latency
 
-# Note: Embedding models will be downloaded from Hugging Face at startup:
+# Note: Embedding models will be downloaded from Hugging Face on first use (lazy loading):
 # - M2V-BGE-M3-1024D (PRIMARY) ~21MB - tss-deposium/m2v-bge-m3-1024d
-# - BGE-M3-ONNX INT8 (CPU) ~150MB - gpahal/bge-m3-onnx-int8
+# - BGE-M3-ONNX INT8 (CPU) ~571MB - gpahal/bge-m3-onnx-int8
+# - BGE-M3-Matryoshka ONNX INT8 ~571MB - tss-deposium/bge-m3-matryoshka-1024d-onnx-int8
 # - Gemma-768D (LEGACY) ~400MB - tss-deposium/gemma-deposium-768d
 # - Qwen3-Embedding-0.6B (RERANK) ~600MB - Qwen/Qwen3-Embedding-0.6B
-# Total first download: ~170MB (cached on Railway volume between deployments)
+# Models cached on Railway volume (/app/models) between deployments
 
 # Create cache directory for models (Railway volume will override)
 RUN mkdir -p /app/models/transformers
