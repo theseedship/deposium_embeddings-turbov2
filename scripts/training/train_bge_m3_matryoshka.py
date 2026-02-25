@@ -57,11 +57,10 @@ LEARNING_RATE = 2e-5
 WARMUP_RATIO = 0.1
 
 # Dataset config
-# MIRACL: multilingual retrieval (18 languages, includes French)
-# mMARCO: multilingual MS MARCO (14 languages)
-MIRACL_LANGUAGES = ["fr", "en", "de", "es", "ar", "zh", "ja", "ru"]
-MIRACL_MAX_SAMPLES = 50_000  # cap total samples from MIRACL
-MMARCO_MAX_SAMPLES = 20_000  # additional samples from mMARCO
+# Uses sentence-transformers official datasets (no auth required, always available)
+ALLNLI_MAX_SAMPLES = 0  # 0 = use all (~560k pairs)
+NQ_MAX_SAMPLES = 0  # 0 = use all (~100k pairs)
+GOOAQ_MAX_SAMPLES = 50_000  # cap from GooAQ (3M+ total)
 
 # Output dirs
 OUTPUT_DIR = "./bge-m3-matryoshka-deposium"
@@ -102,87 +101,79 @@ def install_dependencies():
 # Step 1: Load & prepare dataset
 # ---------------------------------------------------------------------------
 
-def load_miracl_pairs(languages: list[str], max_samples: int) -> list[dict]:
-    """Load query-document pairs from MIRACL dataset."""
-    from datasets import load_dataset
-
-    all_pairs = []
-
-    for lang in languages:
-        try:
-            logger.info(f"Loading MIRACL/{lang}...")
-            ds = load_dataset("miracl/miracl", lang, split="train", trust_remote_code=True)
-
-            for row in ds:
-                query = row.get("query", "")
-                # MIRACL has positive_passages and negative_passages
-                positives = row.get("positive_passages", [])
-                for pos in positives:
-                    text = pos.get("text", "")
-                    if query and text:
-                        all_pairs.append({"anchor": query, "positive": text})
-
-                if len(all_pairs) >= max_samples:
-                    break
-
-            logger.info(f"  MIRACL/{lang}: {len(all_pairs)} total pairs so far")
-
-        except Exception as e:
-            logger.warning(f"  Skipping MIRACL/{lang}: {e}")
-            continue
-
-        if len(all_pairs) >= max_samples:
-            break
-
-    return all_pairs[:max_samples]
-
-
-def load_mmarco_pairs(max_samples: int) -> list[dict]:
-    """Load query-document pairs from mMARCO (multilingual MS MARCO)."""
+def load_allnli_pairs(max_samples: int) -> list[dict]:
+    """Load pairs from sentence-transformers/all-nli (NLI triplets, ~560k)."""
     from datasets import load_dataset
 
     pairs = []
-
     try:
-        logger.info("Loading mMARCO/french...")
-        # unicamp-dl/mmarco has triplets: query, positive, negative
-        ds = load_dataset(
-            "unicamp-dl/mmarco",
-            "french",
-            split="train",
-            streaming=True,  # mMARCO is huge, stream it
-        )
+        logger.info("Loading sentence-transformers/all-nli...")
+        ds = load_dataset("sentence-transformers/all-nli", "triplet", split="train")
+        for row in ds:
+            pairs.append({"anchor": row["anchor"], "positive": row["positive"]})
+            if max_samples and len(pairs) >= max_samples:
+                break
+        logger.info(f"  all-nli: {len(pairs)} pairs")
+    except Exception as e:
+        logger.warning(f"  Skipping all-nli: {e}")
 
-        for i, row in enumerate(ds):
-            query = row.get("query", "")
-            positive = row.get("positive", "")
-            if query and positive:
-                pairs.append({"anchor": query, "positive": positive})
+    return pairs
+
+
+def load_nq_pairs(max_samples: int) -> list[dict]:
+    """Load pairs from sentence-transformers/natural-questions (~100k Q&A)."""
+    from datasets import load_dataset
+
+    pairs = []
+    try:
+        logger.info("Loading sentence-transformers/natural-questions...")
+        ds = load_dataset("sentence-transformers/natural-questions", split="train")
+        for row in ds:
+            pairs.append({"anchor": row["query"], "positive": row["answer"]})
+            if max_samples and len(pairs) >= max_samples:
+                break
+        logger.info(f"  natural-questions: {len(pairs)} pairs")
+    except Exception as e:
+        logger.warning(f"  Skipping natural-questions: {e}")
+
+    return pairs
+
+
+def load_gooaq_pairs(max_samples: int) -> list[dict]:
+    """Load pairs from sentence-transformers/gooaq (3M+ Q&A, streamed)."""
+    from datasets import load_dataset
+
+    pairs = []
+    try:
+        logger.info(f"Loading sentence-transformers/gooaq (max {max_samples})...")
+        ds = load_dataset("sentence-transformers/gooaq", split="train", streaming=True)
+        for row in ds:
+            pairs.append({"anchor": row["question"], "positive": row["answer"]})
             if len(pairs) >= max_samples:
                 break
-
-        logger.info(f"  mMARCO: {len(pairs)} pairs loaded")
-
+        logger.info(f"  gooaq: {len(pairs)} pairs")
     except Exception as e:
-        logger.warning(f"  Skipping mMARCO: {e}")
+        logger.warning(f"  Skipping gooaq: {e}")
 
-    return pairs[:max_samples]
+    return pairs
 
 
 def prepare_dataset():
-    """Combine MIRACL + mMARCO into train/eval splits."""
+    """Combine all-nli + natural-questions + gooaq into train/eval splits."""
     from datasets import Dataset
 
     logger.info("=" * 60)
     logger.info("STEP 1: Preparing dataset")
     logger.info("=" * 60)
 
-    # Load from both sources
-    miracl_pairs = load_miracl_pairs(MIRACL_LANGUAGES, MIRACL_MAX_SAMPLES)
-    mmarco_pairs = load_mmarco_pairs(MMARCO_MAX_SAMPLES)
+    # Load from sentence-transformers official datasets (no auth required)
+    nli_pairs = load_allnli_pairs(ALLNLI_MAX_SAMPLES)
+    nq_pairs = load_nq_pairs(NQ_MAX_SAMPLES)
+    gooaq_pairs = load_gooaq_pairs(GOOAQ_MAX_SAMPLES)
 
-    all_pairs = miracl_pairs + mmarco_pairs
-    logger.info(f"Total pairs: {len(all_pairs)} (MIRACL: {len(miracl_pairs)}, mMARCO: {len(mmarco_pairs)})")
+    all_pairs = nli_pairs + nq_pairs + gooaq_pairs
+    logger.info(f"Total pairs: {len(all_pairs)} "
+                f"(all-nli: {len(nli_pairs)}, nq: {len(nq_pairs)}, gooaq: {len(gooaq_pairs)})")
 
     if len(all_pairs) < 1000:
         logger.error("Not enough data! Need at least 1000 pairs. Check dataset loading.")
@@ -226,7 +217,7 @@ def train_model(train_dataset, eval_dataset):
     # Check GPU
     if torch.cuda.is_available():
         gpu_name = torch.cuda.get_device_name(0)
-        gpu_mem = torch.cuda.get_device_properties(0).total_mem / 1e9
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1e9
         logger.info(f"GPU: {gpu_name} ({gpu_mem:.1f} GB)")
     else:
         logger.warning("No GPU detected! Training will be very slow.")
@@ -248,7 +239,7 @@ def train_model(train_dataset, eval_dataset):
     # Adjust batch size based on available VRAM
     effective_batch_size = BATCH_SIZE
     if torch.cuda.is_available():
-        gpu_mem = torch.cuda.get_device_properties(0).total_mem / 1e9
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1e9
         if gpu_mem < 16:
             effective_batch_size = 8
             logger.info(f"Reduced batch size to {effective_batch_size} for {gpu_mem:.0f}GB GPU")
@@ -451,8 +442,8 @@ def push_to_hub(model=None):
                      f"  huggingface-cli upload {HF_REPO_ID}-onnx-int8 {ONNX_OUTPUT_DIR}")
         return
 
-    login(token=token)
-    api = HfApi()
+    # Pass token directly to HfApi instead of login() to avoid auth issues
+    api = HfApi(token=token)
 
     # Push PyTorch model
     logger.info(f"Pushing PyTorch model to {HF_REPO_ID}...")

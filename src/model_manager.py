@@ -217,6 +217,17 @@ class ModelManager:
             device="cpu"
         )
 
+        # BGE-M3 Matryoshka (BEST - fine-tuned with MatryoshkaLoss, truncatable to 768/512/256D)
+        # Full 1024D quality + Matryoshka: can truncate dimensions with minimal quality loss
+        self.configs["bge-m3-matryoshka"] = ModelConfig(
+            name="bge-m3-matryoshka",
+            type="sentence_transformer",
+            hub_id=os.getenv("HF_MODEL_BGE_M3_MATRYOSHKA", "tss-deposium/bge-m3-matryoshka-1024d"),
+            priority=1,
+            estimated_vram_mb=2300,  # BGE-M3 ~2.3GB on GPU
+            device=self.device
+        )
+
         # Gemma-768D (LEGACY - kept for backwards compatibility)
         self.configs["gemma-768d"] = ModelConfig(
             name="gemma-768d",
@@ -793,6 +804,11 @@ class ModelManager:
                         device=config.device
                     )
                     logger.info(f"✅ {name} loaded (SentenceTransformer)")
+
+                # Store truncate_dims for Matryoshka models
+                if config.truncate_dims:
+                    model._truncate_dims = config.truncate_dims
+                    logger.info(f"   Embeddings will be truncated to {config.truncate_dims}D")
 
                 # Apply torch.compile if enabled (Linux only usually)
                 if os.getenv("ENABLE_TORCH_COMPILE", "0") == "1" and hasattr(torch, "compile"):
