@@ -60,8 +60,9 @@ logger = logging.getLogger(__name__)
 
 class OnnxEmbeddingModel:
     """
-    Wrapper for ONNX embedding models (like BGE-M3 ONNX INT8).
+    Wrapper for ONNX embedding models (BGE-M3 ONNX INT8, Matryoshka ONNX INT8).
     Provides a compatible interface with encode() method.
+    Supports both pre-pooled outputs (dense_vecs) and raw outputs (last_hidden_state).
     """
 
     def __init__(self, model_path: str, tokenizer_path: str = None):
@@ -85,10 +86,22 @@ class OnnxEmbeddingModel:
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
-        # Get output name (dense_vecs for BGE-M3)
-        self.output_name = "dense_vecs"
+        # Auto-detect output format
+        output_names = [o.name for o in self.session.get_outputs()]
+        if "dense_vecs" in output_names:
+            # gpahal/bge-m3-onnx-int8: pre-pooled output
+            self.output_name = "dense_vecs"
+            self.needs_pooling = False
+        elif "last_hidden_state" in output_names:
+            # Optimum-exported models: raw transformer output, needs mean pooling
+            self.output_name = "last_hidden_state"
+            self.needs_pooling = True
+        else:
+            # Fallback: use first output
+            self.output_name = output_names[0]
+            self.needs_pooling = len(self.session.get_outputs()[0].shape) == 3
 
-        logger.info(f"ONNX model loaded: {model_path}")
+        logger.info(f"ONNX model loaded: {model_path} (output: {self.output_name}, pooling: {self.needs_pooling})")
 
     def encode(self, texts, batch_size: int = 32, **kwargs):
         """
@@ -127,7 +140,18 @@ class OnnxEmbeddingModel:
                 }
             )
 
-            all_embeddings.append(outputs[0])
+            embeddings = outputs[0]
+
+            if self.needs_pooling:
+                # Mean pooling: average token embeddings weighted by attention mask
+                attention_mask = inputs["attention_mask"].astype(np.float32)
+                mask_expanded = np.expand_dims(attention_mask, axis=-1)
+                sum_embeddings = np.sum(embeddings * mask_expanded, axis=1)
+                sum_mask = np.sum(mask_expanded, axis=1)
+                sum_mask = np.clip(sum_mask, a_min=1e-9, a_max=None)
+                embeddings = sum_embeddings / sum_mask
+
+            all_embeddings.append(embeddings)
 
         return np.vstack(all_embeddings)
 
@@ -217,15 +241,17 @@ class ModelManager:
             device="cpu"
         )
 
-        # BGE-M3 Matryoshka (BEST - fine-tuned with MatryoshkaLoss, truncatable to 768/512/256D)
-        # Full 1024D quality + Matryoshka: can truncate dimensions with minimal quality loss
+        # BGE-M3 Matryoshka ONNX INT8 (BEST - fine-tuned with MatryoshkaLoss, truncatable)
+        # Full 1024D quality + Matryoshka: truncate to 768/512/256D with minimal quality loss
+        # ONNX INT8: ~571MB on CPU, ~4x smaller than PyTorch, <1% quality loss
         self.configs["bge-m3-matryoshka"] = ModelConfig(
             name="bge-m3-matryoshka",
-            type="sentence_transformer",
-            hub_id=os.getenv("HF_MODEL_BGE_M3_MATRYOSHKA", "tss-deposium/bge-m3-matryoshka-1024d"),
+            type="onnx_embedding",
+            path="models/bge-m3-matryoshka-onnx-int8",
+            hub_id=os.getenv("HF_MODEL_BGE_M3_MATRYOSHKA", "tss-deposium/bge-m3-matryoshka-1024d-onnx-int8"),
             priority=1,
-            estimated_vram_mb=2300,  # BGE-M3 ~2.3GB on GPU
-            device=self.device
+            estimated_vram_mb=0,  # ONNX runs on CPU
+            device="cpu"
         )
 
         # Gemma-768D (LEGACY - kept for backwards compatibility)
@@ -720,29 +746,42 @@ class ModelManager:
                 logger.info(f"✅ {name} loaded (ONNX on CPU)")
 
             elif config.type == "onnx_embedding":
-                # Load ONNX embedding model (BGE-M3 ONNX INT8)
+                # Load ONNX embedding model (BGE-M3 ONNX INT8, Matryoshka ONNX INT8)
                 if not ONNX_AVAILABLE:
                     raise ImportError("onnxruntime and transformers required for ONNX embedding models")
+
+                def _find_onnx_file(directory: Path) -> Path:
+                    """Find ONNX model file in directory (model_quantized.onnx or model.onnx)."""
+                    for candidate in ["model_quantized.onnx", "model.onnx"]:
+                        f = directory / candidate
+                        if f.exists():
+                            return f
+                    raise FileNotFoundError(f"No ONNX model file found in {directory}")
 
                 # Try local path first, then Docker path
                 local_path = Path(config.path) if config.path else None
                 docker_path = Path(f"/app/local_models/{name}")
 
                 if docker_path.exists():
-                    model_file = docker_path / "model_quantized.onnx"
+                    model_file = _find_onnx_file(docker_path)
                     model = OnnxEmbeddingModel(str(model_file), str(docker_path))
                     logger.info(f"✅ {name} loaded from Docker image (ONNX CPU)")
                 elif local_path and local_path.exists():
-                    model_file = local_path / "model_quantized.onnx"
+                    model_file = _find_onnx_file(local_path)
                     model = OnnxEmbeddingModel(str(model_file), str(local_path))
                     logger.info(f"✅ {name} loaded from local path (ONNX CPU)")
                 else:
                     # Download from HuggingFace
                     from huggingface_hub import snapshot_download
                     cache_dir = snapshot_download(repo_id=config.hub_id)
-                    model_file = Path(cache_dir) / "model_quantized.onnx"
+                    model_file = _find_onnx_file(Path(cache_dir))
                     model = OnnxEmbeddingModel(str(model_file), cache_dir)
                     logger.info(f"✅ {name} loaded from HuggingFace (ONNX CPU)")
+
+                # Store truncate_dims for Matryoshka ONNX models
+                if config.truncate_dims:
+                    model._truncate_dims = config.truncate_dims
+                    logger.info(f"   Embeddings will be truncated to {config.truncate_dims}D")
 
             elif config.type == "sentence_transformer":
                 # Load SentenceTransformer model
