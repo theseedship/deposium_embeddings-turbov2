@@ -30,11 +30,13 @@ async def create_embedding(request: EmbedRequest, api_key: str = Depends(shared.
         # Get model (lazy loading)
         selected_model = shared.model_manager.get_model(request.model)
 
+        # Determine truncation: request.dimensions takes priority, then model config
+        truncate_dims = request.dimensions or getattr(selected_model, '_truncate_dims', None)
+
         # Generate embeddings (CPU/GPU-heavy, offload to thread pool)
         def _encode():
             with torch.inference_mode():
                 embs = selected_model.encode(texts, show_progress_bar=False)
-            truncate_dims = getattr(selected_model, '_truncate_dims', None)
             if truncate_dims:
                 embs = embs[:, :truncate_dims]
             return [emb.tolist() for emb in embs]

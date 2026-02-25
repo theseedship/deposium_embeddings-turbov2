@@ -9,6 +9,7 @@ class EmbedRequest(BaseModel):
     model: str = Field(default=DEFAULT_EMBEDDING_MODEL, description="Model to use for embeddings")
     input: Optional[str | List[str]] = Field(default=None, description="Text(s) to embed (OpenAI format)", max_length=100_000)
     prompt: Optional[str] = Field(default=None, description="Text to embed (Ollama format)", max_length=100_000)
+    dimensions: Optional[int] = Field(default=None, description="Truncate embeddings to N dimensions (Matryoshka models)", ge=64, le=4096)
 
     @model_validator(mode='after')
     def normalize_input(self):
