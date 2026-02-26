@@ -194,18 +194,21 @@ class OnnxRerankerModel:
             )
         else:
             # Try loading from hub (pre-quantized ONNX or auto-export from PyTorch)
+            # Use token=False to avoid expired HF_TOKEN on Railway
             try:
                 logger.info(f"Loading ONNX reranker from hub: {hub_id}")
                 self.model = ORTModelForSequenceClassification.from_pretrained(
                     hub_id, file_name="model_quantized.onnx",
                     provider="CPUExecutionProvider",
-                    session_options=_onnx_session_options()
+                    session_options=_onnx_session_options(),
+                    token=False
                 )
             except Exception:
                 logger.info(f"No pre-quantized ONNX found, auto-exporting from {hub_id}...")
                 self.model = ORTModelForSequenceClassification.from_pretrained(
                     hub_id, export=True, provider="CPUExecutionProvider",
-                    session_options=_onnx_session_options()
+                    session_options=_onnx_session_options(),
+                    token=False
                 )
             # Cache locally for next startup
             if local_dir:
@@ -213,7 +216,7 @@ class OnnxRerankerModel:
                 self.model.save_pretrained(local_dir)
                 logger.info(f"ONNX reranker cached to: {local_dir}")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(hub_id)
+        self.tokenizer = AutoTokenizer.from_pretrained(hub_id, token=False)
         logger.info(f"ONNX reranker ready: {hub_id}")
 
     def rank(self, query: str, documents: list, top_k: int = None, **kwargs) -> list:
