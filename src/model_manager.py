@@ -920,25 +920,25 @@ class ModelManager:
                     model = OnnxRerankerModel(str(model_file), str(local_path))
                     logger.info(f"✅ {name} loaded from local path (ONNX reranker CPU)")
                 else:
-                    # Download from HuggingFace
-                    from huggingface_hub import snapshot_download
+                    # Download model.onnx separately (lower peak memory than snapshot_download)
+                    from huggingface_hub import hf_hub_download
+                    hub_id = config.hub_id
+                    token_arg = False  # Public repo, avoid expired HF_TOKEN
 
-                    def _download_onnx_reranker():
+                    # Download ONNX model file
+                    onnx_candidates = ["model_quantized.onnx", "model.onnx"]
+                    model_file = None
+                    for candidate in onnx_candidates:
                         try:
-                            return snapshot_download(repo_id=config.hub_id)
+                            model_file = hf_hub_download(repo_id=hub_id, filename=candidate, token=token_arg)
+                            break
                         except Exception:
-                            logger.warning("snapshot_download failed with default token, retrying without auth...")
-                            return snapshot_download(repo_id=config.hub_id, token=False)
+                            continue
+                    if model_file is None:
+                        raise FileNotFoundError(f"No ONNX model found in {hub_id}")
 
-                    cache_dir = _download_onnx_reranker()
-                    try:
-                        model_file = _find_onnx_file(Path(cache_dir))
-                    except FileNotFoundError:
-                        # Corrupted cache (e.g. OOM kill during previous download) — force re-download
-                        logger.warning(f"ONNX file missing from cache, forcing re-download...")
-                        cache_dir = snapshot_download(repo_id=config.hub_id, token=False, force_download=True)
-                        model_file = _find_onnx_file(Path(cache_dir))
-                    model = OnnxRerankerModel(str(model_file), cache_dir)
+                    # Tokenizer loaded directly from hub (small files, no OOM risk)
+                    model = OnnxRerankerModel(model_file, hub_id)
                     logger.info(f"✅ {name} loaded from HuggingFace (ONNX reranker CPU)")
 
             elif config.type == "sentence_transformer":
