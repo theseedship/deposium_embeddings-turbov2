@@ -182,4 +182,4 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(shared
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Reranking error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Reranking failed: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Reranking failed: {type(e).__name__}")
