@@ -861,7 +861,12 @@ class ModelManager:
                 else:
                     # Download from HuggingFace
                     from huggingface_hub import snapshot_download
-                    cache_dir = snapshot_download(repo_id=config.hub_id)
+                    try:
+                        cache_dir = snapshot_download(repo_id=config.hub_id)
+                    except Exception:
+                        # Retry without token (expired HF_TOKEN breaks public repo downloads)
+                        logger.warning(f"snapshot_download failed with default token, retrying without auth...")
+                        cache_dir = snapshot_download(repo_id=config.hub_id, token=False)
                     model_file = _find_onnx_file(Path(cache_dir))
                     model = OnnxEmbeddingModel(str(model_file), cache_dir)
                     logger.info(f"✅ {name} loaded from HuggingFace (ONNX CPU)")
@@ -899,7 +904,11 @@ class ModelManager:
                 else:
                     # Download from HuggingFace
                     from huggingface_hub import snapshot_download
-                    cache_dir = snapshot_download(repo_id=config.hub_id)
+                    try:
+                        cache_dir = snapshot_download(repo_id=config.hub_id)
+                    except Exception:
+                        logger.warning(f"snapshot_download failed with default token, retrying without auth...")
+                        cache_dir = snapshot_download(repo_id=config.hub_id, token=False)
                     model_file = _find_onnx_file(Path(cache_dir))
                     model = OnnxRerankerModel(str(model_file), cache_dir)
                     logger.info(f"✅ {name} loaded from HuggingFace (ONNX reranker CPU)")
