@@ -58,6 +58,16 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _onnx_session_options() -> 'ort.SessionOptions':
+    """Create memory-optimized ONNX Runtime session options."""
+    opts = ort.SessionOptions()
+    opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    opts.enable_cpu_mem_arena = False  # Don't pre-allocate memory arena (saves ~200MB peak)
+    opts.inter_op_num_threads = 1
+    opts.intra_op_num_threads = int(os.getenv("ORT_NUM_THREADS", "4"))
+    return opts
+
+
 class OnnxEmbeddingModel:
     """
     Wrapper for ONNX embedding models (BGE-M3 ONNX INT8, Matryoshka ONNX INT8).
@@ -79,9 +89,9 @@ class OnnxEmbeddingModel:
         self.model_path = model_path
         tokenizer_path = tokenizer_path or str(Path(model_path).parent)
 
-        # Load ONNX session
-        providers = ['CPUExecutionProvider']  # Force CPU for consistency
-        self.session = ort.InferenceSession(model_path, providers=providers)
+        # Load ONNX session with memory-optimized options
+        providers = ['CPUExecutionProvider']
+        self.session = ort.InferenceSession(model_path, providers=providers, sess_options=_onnx_session_options())
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
@@ -170,9 +180,9 @@ class OnnxRerankerModel:
         self.model_path = model_path
         tokenizer_path = tokenizer_path or str(Path(model_path).parent)
 
-        # Load ONNX session
+        # Load ONNX session with memory-optimized options
         providers = ['CPUExecutionProvider']
-        self.session = ort.InferenceSession(model_path, providers=providers)
+        self.session = ort.InferenceSession(model_path, providers=providers, sess_options=_onnx_session_options())
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
