@@ -869,15 +869,25 @@ class ModelManager:
             elif config.type == "onnx_reranker":
                 # Load ONNX cross-encoder reranker (raw onnxruntime, lowest memory footprint)
                 from huggingface_hub import hf_hub_download
-                local_path = Path(config.path) if config.path else None
 
-                # Check local cache first
+                # Search paths: Docker pre-downloaded → local dev → HF hub download
+                search_dirs = [
+                    Path(f"/app/local_models/{name}"),  # Docker pre-downloaded
+                    Path(config.path) if config.path else None,  # Local dev path
+                ]
+
                 model_file = None
-                if local_path:
-                    for candidate in ["model_quantized.onnx", "model.onnx"]:
-                        if (local_path / candidate).exists():
-                            model_file = str(local_path / candidate)
-                            break
+                tokenizer_dir = None
+                for d in search_dirs:
+                    if d and d.exists():
+                        for candidate in ["model_quantized.onnx", "model.onnx"]:
+                            if (d / candidate).exists():
+                                model_file = str(d / candidate)
+                                tokenizer_dir = str(d)
+                                logger.info(f"Found ONNX reranker at {model_file}")
+                                break
+                    if model_file:
+                        break
 
                 # Download from hub if not cached locally
                 if not model_file:
@@ -892,7 +902,7 @@ class ModelManager:
                 if not model_file:
                     raise FileNotFoundError(f"No ONNX model found in {config.hub_id}")
 
-                model = OnnxRerankerModel(model_file, config.hub_id)
+                model = OnnxRerankerModel(model_file, tokenizer_dir or config.hub_id)
                 logger.info(f"✅ {name} loaded (ONNX reranker CPU)")
 
             elif config.type == "sentence_transformer":

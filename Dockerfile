@@ -74,12 +74,24 @@ COPY src/ ./src/
 # - BGE-M3-ONNX INT8 (CPU) ~571MB - gpahal/bge-m3-onnx-int8
 # - BGE-M3-Matryoshka ONNX INT8 ~571MB - tss-deposium/bge-m3-matryoshka-1024d-onnx-int8
 # - Gemma-768D (LEGACY) ~400MB - tss-deposium/gemma-deposium-768d
-# - BGE-Reranker-v2-m3 ONNX INT8 ~569MB - er6y/bge-reranker-v2-m3_dynamic_int8_onnx
+# - BGE-Reranker-v2-m3 ONNX INT8 ~544MB - tss-deposium/bge-reranker-v2-m3-onnx-int8 (pre-downloaded)
 # - Qwen3-Embedding-0.6B (RERANK) ~600MB - Qwen/Qwen3-Embedding-0.6B
 # Models cached on Railway volume (/app/models) between deployments
 
 # Create cache directory for models (Railway volume will override)
 RUN mkdir -p /app/models/transformers
+
+# Pre-download BGE-Reranker ONNX INT8 at build time to /app/local_models/
+# This avoids OOM during runtime download on Railway (544MB model + download buffer kills the process)
+# Using /app/local_models/ instead of HF_HOME to avoid Railway volume mount overriding the cache
+RUN mkdir -p /app/local_models/bge-reranker-v2-m3-onnx-int8 && \
+    python -c "\
+from huggingface_hub import hf_hub_download; \
+import shutil; \
+files = ['model_quantized.onnx', 'config.json', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json']; \
+[shutil.copy(hf_hub_download(repo_id='tss-deposium/bge-reranker-v2-m3-onnx-int8', filename=f, token=False), \
+  f'/app/local_models/bge-reranker-v2-m3-onnx-int8/{f}') for f in files]; \
+print('BGE-Reranker-v2-m3 ONNX INT8 pre-downloaded to /app/local_models/')"
 
 # Note: Running as root to allow writing to Railway volume at /app/models
 # The Railway volume is mounted with root permissions and cannot be written by non-root user
