@@ -31,7 +31,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Model Configuration (defaults - can be overridden at runtime)
 ENV DEFAULT_EMBEDDING_MODEL=m2v-bge-m3-1024d \
-    DEFAULT_RERANK_MODEL=qwen3-rerank
+    DEFAULT_RERANK_MODEL=bge-reranker-v2-m3
 
 # Model Cache (uses Railway volume at /app/models)
 # Note: Using only HF_HOME (TRANSFORMERS_CACHE is deprecated in transformers v5)
@@ -74,6 +74,7 @@ COPY src/ ./src/
 # - BGE-M3-ONNX INT8 (CPU) ~571MB - gpahal/bge-m3-onnx-int8
 # - BGE-M3-Matryoshka ONNX INT8 ~571MB - tss-deposium/bge-m3-matryoshka-1024d-onnx-int8
 # - Gemma-768D (LEGACY) ~400MB - tss-deposium/gemma-deposium-768d
+# - BGE-Reranker-v2-m3 ONNX INT8 ~569MB - er6y/bge-reranker-v2-m3_dynamic_int8_onnx
 # - Qwen3-Embedding-0.6B (RERANK) ~600MB - Qwen/Qwen3-Embedding-0.6B
 # Models cached on Railway volume (/app/models) between deployments
 

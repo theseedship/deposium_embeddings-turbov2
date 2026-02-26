@@ -21,7 +21,8 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(shared
     Rerank documents by relevance to a query.
 
     **Models:**
-    - mxbai-rerank-v2: SOTA cross-encoder (BEIR 55.57, 100+ languages) - RECOMMENDED
+    - bge-reranker-v2-m3: ONNX INT8 cross-encoder (MIRACL FR 59.6, CPU optimized, ~569MB)
+    - mxbai-rerank-v2: Cross-encoder (BEIR 55.57, 100+ languages)
     - mxbai-rerank-xsmall: Lighter cross-encoder (~40% faster, 278M params)
     - qwen3-rerank: Bi-encoder with cosine similarity (faster, lower quality)
     - Embedding models: Can also use for reranking via cosine similarity
@@ -47,9 +48,32 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(shared
         # Check model type for appropriate reranking strategy
         model_config = shared.model_manager.configs.get(request.model)
 
+        # ONNX Reranker (BGE-reranker-v2-m3 ONNX INT8 - CPU optimized cross-encoder)
+        if model_config and model_config.type == "onnx_reranker":
+            top_k = request.top_k if request.top_k else len(request.documents)
+
+            ranked_results = await run_sync(
+                selected_model.rank,
+                request.query,
+                request.documents,
+                top_k=top_k,
+            )
+
+            # OnnxRerankerModel.rank() returns list of dicts with index, score, document
+            results = [
+                {
+                    "index": item["index"],
+                    "document": item["document"],
+                    "relevance_score": item["score"]
+                }
+                for item in ranked_results
+            ]
+
+            logger.info(f"Reranked {len(request.documents)} documents with {request.model} (ONNX cross-encoder), top score: {results[0]['relevance_score']:.4f}")
+
         # MXBAI Reranker (true cross-encoder - SOTA quality)
         # Supports both V1 (DeBERTa) and V2 (Qwen2) architectures
-        if model_config and model_config.type in ("mxbai_reranker", "mxbai_reranker_v1"):
+        elif model_config and model_config.type in ("mxbai_reranker", "mxbai_reranker_v1"):
             if not shared.MXBAI_RERANK_AVAILABLE:
                 raise HTTPException(
                     status_code=500,

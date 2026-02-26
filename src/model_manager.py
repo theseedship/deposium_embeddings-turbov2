@@ -156,11 +156,82 @@ class OnnxEmbeddingModel:
         return np.vstack(all_embeddings)
 
 
+class OnnxRerankerModel:
+    """
+    Wrapper for ONNX cross-encoder reranker models (BGE-reranker-v2-m3 ONNX INT8).
+    Provides a rank() method compatible with the reranking route.
+    XLMRoberta architecture: inputs are (input_ids, attention_mask) only — no token_type_ids.
+    """
+
+    def __init__(self, model_path: str, tokenizer_path: str = None):
+        if not ONNX_AVAILABLE:
+            raise ImportError("onnxruntime and transformers required for ONNX reranker models")
+
+        self.model_path = model_path
+        tokenizer_path = tokenizer_path or str(Path(model_path).parent)
+
+        # Load ONNX session
+        providers = ['CPUExecutionProvider']
+        self.session = ort.InferenceSession(model_path, providers=providers)
+
+        # Load tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+        logger.info(f"ONNX reranker loaded: {model_path}")
+
+    def rank(self, query: str, documents: list, top_k: int = None, **kwargs) -> list:
+        """
+        Rank documents by relevance to query.
+
+        Args:
+            query: Search query
+            documents: List of document strings
+            top_k: Return only top K results (None = all)
+
+        Returns:
+            List of dicts with index, score, document keys, sorted by score descending
+        """
+        pairs = [[query, doc] for doc in documents]
+
+        # Tokenize as cross-encoder pairs: <s> query </s> </s> passage </s>
+        inputs = self.tokenizer(
+            pairs,
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors="np"
+        )
+
+        # Run inference
+        outputs = self.session.run(
+            ["logits"],
+            {
+                "input_ids": inputs["input_ids"].astype(np.int64),
+                "attention_mask": inputs["attention_mask"].astype(np.int64),
+            }
+        )
+
+        # Sigmoid to normalize scores to [0, 1]
+        scores = 1 / (1 + np.exp(-outputs[0].flatten()))
+
+        # Build results sorted by score
+        results = sorted(
+            [
+                {"index": i, "score": float(s), "document": documents[i]}
+                for i, s in enumerate(scores)
+            ],
+            key=lambda x: x["score"],
+            reverse=True
+        )
+
+        return results[:top_k] if top_k else results
+
+
 @dataclass
 class ModelConfig:
     """Configuration for a model."""
     name: str
-    type: str  # "model2vec", "sentence_transformer", "sentence_transformer_2d", "mxbai_reranker", "causal_lm"
+    type: str  # "model2vec", "sentence_transformer", "sentence_transformer_2d", "onnx_embedding", "onnx_reranker", "mxbai_reranker", "causal_lm"
     path: Optional[str] = None  # Local path
     hub_id: Optional[str] = None  # HuggingFace ID
     priority: int = 0  # Higher = kept in memory longer
@@ -384,6 +455,23 @@ class ModelManager:
             estimated_vram_mb=200,  # ~200MB (no quantization for V1)
             device=self.device,
             quantize_4bit=False  # V1 doesn't support bitsandbytes quantization
+        )
+
+        # ============================================================
+        # BGE-Reranker-v2-m3 ONNX INT8 (CPU-optimized cross-encoder)
+        # https://huggingface.co/er6y/bge-reranker-v2-m3_dynamic_int8_onnx
+        # 568M params, XLMRoberta architecture, MIRACL FR 59.6
+        # ONNX INT8 dynamic quantization: ~569MB, ~150-250ms latency
+        # Performance retention: 98.57% vs original PyTorch
+        # ============================================================
+        self.configs["bge-reranker-v2-m3"] = ModelConfig(
+            name="bge-reranker-v2-m3",
+            type="onnx_reranker",
+            path="models/bge-reranker-v2-m3-onnx-int8",
+            hub_id=os.getenv("HF_MODEL_BGE_RERANKER", "er6y/bge-reranker-v2-m3_dynamic_int8_onnx"),
+            priority=1,
+            estimated_vram_mb=0,  # CPU only
+            device="cpu"
         )
 
         # ============================================================
@@ -782,6 +870,39 @@ class ModelManager:
                 if config.truncate_dims:
                     model._truncate_dims = config.truncate_dims
                     logger.info(f"   Embeddings will be truncated to {config.truncate_dims}D")
+
+            elif config.type == "onnx_reranker":
+                # Load ONNX reranker model (BGE-reranker-v2-m3 ONNX INT8)
+                if not ONNX_AVAILABLE:
+                    raise ImportError("onnxruntime and transformers required for ONNX reranker models")
+
+                def _find_onnx_file(directory: Path) -> Path:
+                    """Find ONNX model file in directory."""
+                    for candidate in ["model_quantized.onnx", "model.onnx"]:
+                        f = directory / candidate
+                        if f.exists():
+                            return f
+                    raise FileNotFoundError(f"No ONNX model file found in {directory}")
+
+                # Try local path first, then Docker path
+                local_path = Path(config.path) if config.path else None
+                docker_path = Path(f"/app/local_models/{name}")
+
+                if docker_path.exists():
+                    model_file = _find_onnx_file(docker_path)
+                    model = OnnxRerankerModel(str(model_file), str(docker_path))
+                    logger.info(f"✅ {name} loaded from Docker image (ONNX reranker CPU)")
+                elif local_path and local_path.exists():
+                    model_file = _find_onnx_file(local_path)
+                    model = OnnxRerankerModel(str(model_file), str(local_path))
+                    logger.info(f"✅ {name} loaded from local path (ONNX reranker CPU)")
+                else:
+                    # Download from HuggingFace
+                    from huggingface_hub import snapshot_download
+                    cache_dir = snapshot_download(repo_id=config.hub_id)
+                    model_file = _find_onnx_file(Path(cache_dir))
+                    model = OnnxRerankerModel(str(model_file), cache_dir)
+                    logger.info(f"✅ {name} loaded from HuggingFace (ONNX reranker CPU)")
 
             elif config.type == "sentence_transformer":
                 # Load SentenceTransformer model
