@@ -168,72 +168,75 @@ class OnnxEmbeddingModel:
 
 class OnnxRerankerModel:
     """
-    Wrapper for ONNX cross-encoder reranker models (BGE-reranker-v2-m3 ONNX INT8).
-    Provides a rank() method compatible with the reranking route.
-    XLMRoberta architecture: inputs are (input_ids, attention_mask) only — no token_type_ids.
+    Wrapper for ONNX cross-encoder reranker models using optimum ORTModelForSequenceClassification.
+    Handles proper ONNX export with classification head (auto-export from PyTorch if needed).
     """
 
-    def __init__(self, model_path: str, tokenizer_path: str = None):
-        if not ONNX_AVAILABLE:
-            raise ImportError("onnxruntime and transformers required for ONNX reranker models")
+    def __init__(self, hub_id: str, local_dir: str = None):
+        try:
+            from optimum.onnxruntime import ORTModelForSequenceClassification
+        except ImportError:
+            raise ImportError("optimum[onnxruntime] required for ONNX reranker models")
 
-        self.model_path = model_path
-        tokenizer_path = tokenizer_path or str(Path(model_path).parent)
+        # Check for local cache (model.onnx or model_quantized.onnx)
+        onnx_file = None
+        if local_dir and Path(local_dir).exists():
+            for candidate in ["model_quantized.onnx", "model.onnx"]:
+                if (Path(local_dir) / candidate).exists():
+                    onnx_file = candidate
+                    break
 
-        # Load ONNX session with memory-optimized options
-        providers = ['CPUExecutionProvider']
-        self.session = ort.InferenceSession(model_path, providers=providers, sess_options=_onnx_session_options())
+        if onnx_file:
+            logger.info(f"Loading ONNX reranker from local cache: {local_dir}/{onnx_file}")
+            self.model = ORTModelForSequenceClassification.from_pretrained(
+                local_dir, file_name=onnx_file, provider="CPUExecutionProvider",
+                session_options=_onnx_session_options()
+            )
+        else:
+            # Try loading from hub (pre-quantized ONNX or auto-export from PyTorch)
+            try:
+                logger.info(f"Loading ONNX reranker from hub: {hub_id}")
+                self.model = ORTModelForSequenceClassification.from_pretrained(
+                    hub_id, file_name="model_quantized.onnx",
+                    provider="CPUExecutionProvider",
+                    session_options=_onnx_session_options()
+                )
+            except Exception:
+                logger.info(f"No pre-quantized ONNX found, auto-exporting from {hub_id}...")
+                self.model = ORTModelForSequenceClassification.from_pretrained(
+                    hub_id, export=True, provider="CPUExecutionProvider",
+                    session_options=_onnx_session_options()
+                )
+            # Cache locally for next startup
+            if local_dir:
+                Path(local_dir).mkdir(parents=True, exist_ok=True)
+                self.model.save_pretrained(local_dir)
+                logger.info(f"ONNX reranker cached to: {local_dir}")
 
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-
-        logger.info(f"ONNX reranker loaded: {model_path}")
+        self.tokenizer = AutoTokenizer.from_pretrained(hub_id)
+        logger.info(f"ONNX reranker ready: {hub_id}")
 
     def rank(self, query: str, documents: list, top_k: int = None, **kwargs) -> list:
         """
         Rank documents by relevance to query.
-
-        Args:
-            query: Search query
-            documents: List of document strings
-            top_k: Return only top K results (None = all)
-
-        Returns:
-            List of dicts with index, score, document keys, sorted by score descending
+        Returns list of dicts with index, score, document keys, sorted by score desc.
         """
         pairs = [[query, doc] for doc in documents]
 
-        # Tokenize as cross-encoder pairs: <s> query </s> </s> passage </s>
         inputs = self.tokenizer(
-            pairs,
-            padding=True,
-            truncation=True,
-            max_length=512,
-            return_tensors="np"
+            pairs, padding=True, truncation=True, max_length=512, return_tensors="pt"
         )
 
-        # Run inference
-        outputs = self.session.run(
-            ["logits"],
-            {
-                "input_ids": inputs["input_ids"].astype(np.int64),
-                "attention_mask": inputs["attention_mask"].astype(np.int64),
-            }
-        )
+        outputs = self.model(**inputs)
+        logits = outputs.logits.detach().float().flatten().numpy()
 
         # Sigmoid to normalize scores to [0, 1]
-        scores = 1 / (1 + np.exp(-outputs[0].flatten()))
+        scores = 1 / (1 + np.exp(-logits))
 
-        # Build results sorted by score
         results = sorted(
-            [
-                {"index": i, "score": float(s), "document": documents[i]}
-                for i, s in enumerate(scores)
-            ],
-            key=lambda x: x["score"],
-            reverse=True
+            [{"index": i, "score": float(s), "document": documents[i]} for i, s in enumerate(scores)],
+            key=lambda x: x["score"], reverse=True
         )
-
         return results[:top_k] if top_k else results
 
 
@@ -468,17 +471,17 @@ class ModelManager:
         )
 
         # ============================================================
-        # BGE-Reranker-v2-m3 ONNX INT8 (CPU-optimized cross-encoder)
-        # https://huggingface.co/er6y/bge-reranker-v2-m3_dynamic_int8_onnx
+        # BGE-Reranker-v2-m3 ONNX INT8 (CPU-optimized cross-encoder via optimum)
+        # https://huggingface.co/tss-deposium/bge-reranker-v2-m3-onnx-int8
         # 568M params, XLMRoberta architecture, MIRACL FR 59.6
-        # ONNX INT8 dynamic quantization: ~569MB, ~150-250ms latency
-        # Performance retention: 98.57% vs original PyTorch
+        # ONNX INT8 dynamic quantization via optimum (544MB, proper classification head)
+        # P@3=1.00 on FR+EN+multilingual benchmark (vs 0.94 for mxbai-rerank-v2)
         # ============================================================
         self.configs["bge-reranker-v2-m3"] = ModelConfig(
             name="bge-reranker-v2-m3",
             type="onnx_reranker",
             path="models/bge-reranker-v2-m3-onnx-int8",
-            hub_id=os.getenv("HF_MODEL_BGE_RERANKER", "er6y/bge-reranker-v2-m3_dynamic_int8_onnx"),
+            hub_id=os.getenv("HF_MODEL_BGE_RERANKER", "tss-deposium/bge-reranker-v2-m3-onnx-int8"),
             priority=1,
             estimated_vram_mb=0,  # CPU only
             device="cpu"
@@ -895,51 +898,10 @@ class ModelManager:
                     logger.info(f"   Embeddings will be truncated to {config.truncate_dims}D")
 
             elif config.type == "onnx_reranker":
-                # Load ONNX reranker model (BGE-reranker-v2-m3 ONNX INT8)
-                if not ONNX_AVAILABLE:
-                    raise ImportError("onnxruntime and transformers required for ONNX reranker models")
-
-                def _find_onnx_file(directory: Path) -> Path:
-                    """Find ONNX model file in directory."""
-                    for candidate in ["model_quantized.onnx", "model.onnx"]:
-                        f = directory / candidate
-                        if f.exists():
-                            return f
-                    raise FileNotFoundError(f"No ONNX model file found in {directory}")
-
-                # Try local path first, then Docker path
-                local_path = Path(config.path) if config.path else None
-                docker_path = Path(f"/app/local_models/{name}")
-
-                if docker_path.exists():
-                    model_file = _find_onnx_file(docker_path)
-                    model = OnnxRerankerModel(str(model_file), str(docker_path))
-                    logger.info(f"✅ {name} loaded from Docker image (ONNX reranker CPU)")
-                elif local_path and local_path.exists():
-                    model_file = _find_onnx_file(local_path)
-                    model = OnnxRerankerModel(str(model_file), str(local_path))
-                    logger.info(f"✅ {name} loaded from local path (ONNX reranker CPU)")
-                else:
-                    # Download model.onnx separately (lower peak memory than snapshot_download)
-                    from huggingface_hub import hf_hub_download
-                    hub_id = config.hub_id
-                    token_arg = False  # Public repo, avoid expired HF_TOKEN
-
-                    # Download ONNX model file
-                    onnx_candidates = ["model_quantized.onnx", "model.onnx"]
-                    model_file = None
-                    for candidate in onnx_candidates:
-                        try:
-                            model_file = hf_hub_download(repo_id=hub_id, filename=candidate, token=token_arg)
-                            break
-                        except Exception:
-                            continue
-                    if model_file is None:
-                        raise FileNotFoundError(f"No ONNX model found in {hub_id}")
-
-                    # Tokenizer loaded directly from hub (small files, no OOM risk)
-                    model = OnnxRerankerModel(model_file, hub_id)
-                    logger.info(f"✅ {name} loaded from HuggingFace (ONNX reranker CPU)")
+                # Load ONNX cross-encoder reranker via optimum (auto-exports with classification head)
+                local_dir = str(Path(config.path)) if config.path else None
+                model = OnnxRerankerModel(hub_id=config.hub_id, local_dir=local_dir)
+                logger.info(f"✅ {name} loaded (ONNX reranker CPU)")
 
             elif config.type == "sentence_transformer":
                 # Load SentenceTransformer model
