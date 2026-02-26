@@ -168,73 +168,39 @@ class OnnxEmbeddingModel:
 
 class OnnxRerankerModel:
     """
-    Wrapper for ONNX cross-encoder reranker models using optimum ORTModelForSequenceClassification.
-    Handles proper ONNX export with classification head (auto-export from PyTorch if needed).
+    Lightweight ONNX cross-encoder reranker using raw onnxruntime (no PyTorch at inference).
+    Uses pre-exported ONNX INT8 model from tss-deposium/bge-reranker-v2-m3-onnx-int8.
     """
 
-    def __init__(self, hub_id: str, local_dir: str = None):
-        try:
-            from optimum.onnxruntime import ORTModelForSequenceClassification
-        except ImportError:
-            raise ImportError("optimum[onnxruntime] required for ONNX reranker models")
+    def __init__(self, model_path: str, tokenizer_source: str):
+        if not ONNX_AVAILABLE:
+            raise ImportError("onnxruntime and transformers required for ONNX reranker models")
 
-        # Check for local cache (model.onnx or model_quantized.onnx)
-        onnx_file = None
-        if local_dir and Path(local_dir).exists():
-            for candidate in ["model_quantized.onnx", "model.onnx"]:
-                if (Path(local_dir) / candidate).exists():
-                    onnx_file = candidate
-                    break
-
-        if onnx_file:
-            logger.info(f"Loading ONNX reranker from local cache: {local_dir}/{onnx_file}")
-            self.model = ORTModelForSequenceClassification.from_pretrained(
-                local_dir, file_name=onnx_file, provider="CPUExecutionProvider",
-                session_options=_onnx_session_options()
-            )
-        else:
-            # Try loading from hub (pre-quantized ONNX or auto-export from PyTorch)
-            # Use token=False to avoid expired HF_TOKEN on Railway
-            try:
-                logger.info(f"Loading ONNX reranker from hub: {hub_id}")
-                self.model = ORTModelForSequenceClassification.from_pretrained(
-                    hub_id, file_name="model_quantized.onnx",
-                    provider="CPUExecutionProvider",
-                    session_options=_onnx_session_options(),
-                    token=False
-                )
-            except Exception:
-                logger.info(f"No pre-quantized ONNX found, auto-exporting from {hub_id}...")
-                self.model = ORTModelForSequenceClassification.from_pretrained(
-                    hub_id, export=True, provider="CPUExecutionProvider",
-                    session_options=_onnx_session_options(),
-                    token=False
-                )
-            # Cache locally for next startup
-            if local_dir:
-                Path(local_dir).mkdir(parents=True, exist_ok=True)
-                self.model.save_pretrained(local_dir)
-                logger.info(f"ONNX reranker cached to: {local_dir}")
-
-        self.tokenizer = AutoTokenizer.from_pretrained(hub_id, token=False)
-        logger.info(f"ONNX reranker ready: {hub_id}")
+        self.session = ort.InferenceSession(
+            model_path, providers=['CPUExecutionProvider'],
+            sess_options=_onnx_session_options()
+        )
+        self.input_names = {inp.name for inp in self.session.get_inputs()}
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, token=False)
+        logger.info(f"ONNX reranker loaded: {model_path} (inputs: {self.input_names})")
 
     def rank(self, query: str, documents: list, top_k: int = None, **kwargs) -> list:
-        """
-        Rank documents by relevance to query.
-        Returns list of dicts with index, score, document keys, sorted by score desc.
-        """
+        """Rank documents by relevance. Returns sorted list of {index, score, document}."""
         pairs = [[query, doc] for doc in documents]
-
         inputs = self.tokenizer(
-            pairs, padding=True, truncation=True, max_length=512, return_tensors="pt"
+            pairs, padding=True, truncation=True, max_length=512, return_tensors="np"
         )
 
-        outputs = self.model(**inputs)
-        logits = outputs.logits.detach().float().flatten().numpy()
+        feed = {
+            "input_ids": inputs["input_ids"].astype(np.int64),
+            "attention_mask": inputs["attention_mask"].astype(np.int64),
+        }
+        if "token_type_ids" in self.input_names:
+            tids = inputs.get("token_type_ids")
+            feed["token_type_ids"] = (tids if tids is not None else np.zeros_like(inputs["input_ids"])).astype(np.int64)
 
-        # Sigmoid to normalize scores to [0, 1]
-        scores = 1 / (1 + np.exp(-logits))
+        logits = self.session.run(None, feed)[0].flatten()
+        scores = 1 / (1 + np.exp(-logits))  # sigmoid
 
         results = sorted(
             [{"index": i, "score": float(s), "document": documents[i]} for i, s in enumerate(scores)],
@@ -901,9 +867,32 @@ class ModelManager:
                     logger.info(f"   Embeddings will be truncated to {config.truncate_dims}D")
 
             elif config.type == "onnx_reranker":
-                # Load ONNX cross-encoder reranker via optimum (auto-exports with classification head)
-                local_dir = str(Path(config.path)) if config.path else None
-                model = OnnxRerankerModel(hub_id=config.hub_id, local_dir=local_dir)
+                # Load ONNX cross-encoder reranker (raw onnxruntime, lowest memory footprint)
+                from huggingface_hub import hf_hub_download
+                local_path = Path(config.path) if config.path else None
+
+                # Check local cache first
+                model_file = None
+                if local_path:
+                    for candidate in ["model_quantized.onnx", "model.onnx"]:
+                        if (local_path / candidate).exists():
+                            model_file = str(local_path / candidate)
+                            break
+
+                # Download from hub if not cached locally
+                if not model_file:
+                    for candidate in ["model_quantized.onnx", "model.onnx"]:
+                        try:
+                            model_file = hf_hub_download(
+                                repo_id=config.hub_id, filename=candidate, token=False
+                            )
+                            break
+                        except Exception:
+                            continue
+                if not model_file:
+                    raise FileNotFoundError(f"No ONNX model found in {config.hub_id}")
+
+                model = OnnxRerankerModel(model_file, config.hub_id)
                 logger.info(f"✅ {name} loaded (ONNX reranker CPU)")
 
             elif config.type == "sentence_transformer":
