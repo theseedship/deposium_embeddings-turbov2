@@ -107,10 +107,10 @@ async def initialize_models():
     logger.info("  - Auto-unloading: Frees VRAM when limit exceeded")
 
     logger.info("\nAvailable Models:")
-    logger.info("  - m2v-bge-m3-1024d: Distilled BGE-M3 embeddings (priority: 10)")
-    logger.info("  - bge-m3-onnx: BGE-M3 ONNX INT8 for CPU (priority: 8)")
-    logger.info("  - gemma-768d: Legacy multilingual embeddings (priority: 5)")
-    logger.info("  - qwen3-rerank: Document reranking (priority: 8)")
+    logger.info("  - m2v-bge-m3-1024d: Distilled BGE-M3 embeddings")
+    logger.info("  - bge-m3-onnx: BGE-M3 ONNX INT8 for CPU")
+    logger.info("  - bge-m3-matryoshka: BGE-M3 Matryoshka ONNX INT8 (FR fine-tuned)")
+    logger.info("  - bge-reranker-v2-m3: BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT reranker)")
     logger.info("  - vl-classifier: Document complexity classifier (ONNX, standalone)")
 
     # Start background cleanup task

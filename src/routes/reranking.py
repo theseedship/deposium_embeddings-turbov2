@@ -24,7 +24,6 @@ async def rerank_documents(request: RerankRequest, api_key: str = Depends(shared
     - bge-reranker-v2-m3: ONNX INT8 cross-encoder (MIRACL FR 59.6, CPU optimized, ~569MB)
     - mxbai-rerank-v2: Cross-encoder (BEIR 55.57, 100+ languages)
     - mxbai-rerank-xsmall: Lighter cross-encoder (~40% faster, 278M params)
-    - qwen3-rerank: Bi-encoder with cosine similarity (faster, lower quality)
     - Embedding models: Can also use for reranking via cosine similarity
 
     Returns documents sorted by relevance score (highest first)

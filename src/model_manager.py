@@ -213,7 +213,7 @@ class OnnxRerankerModel:
 class ModelConfig:
     """Configuration for a model."""
     name: str
-    type: str  # "model2vec", "sentence_transformer", "sentence_transformer_2d", "onnx_embedding", "onnx_reranker", "mxbai_reranker", "causal_lm"
+    type: str  # "model2vec", "sentence_transformer", "onnx_embedding", "onnx_reranker", "onnx_classifier", "mxbai_reranker", "vision_language", "causal_lm"
     path: Optional[str] = None  # Local path
     hub_id: Optional[str] = None  # HuggingFace ID
     priority: int = 0  # Higher = kept in memory longer
@@ -266,8 +266,6 @@ class ModelManager:
         Model HuggingFace IDs can be overridden via environment variables:
         - HF_MODEL_M2V_BGE_M3: Hub ID for m2v-bge-m3-1024d
         - HF_MODEL_BGE_M3_ONNX: Hub ID for bge-m3-onnx
-        - HF_MODEL_GEMMA_768D: Hub ID for gemma-768d
-        - HF_MODEL_QWEN3_EMBED: Hub ID for qwen3-embed
         """
 
         # M2V-BGE-M3-1024D (PRIMARY - best quality static embeddings)
@@ -307,17 +305,6 @@ class ModelManager:
             device="cpu"
         )
 
-        # Gemma-768D (LEGACY - kept for backwards compatibility)
-        self.configs["gemma-768d"] = ModelConfig(
-            name="gemma-768d",
-            type="model2vec",
-            path="models/gemma-deposium-768d",
-            hub_id=os.getenv("HF_MODEL_GEMMA_768D", "tss-deposium/gemma-deposium-768d"),
-            priority=1,  # Equal priority for all models
-            estimated_vram_mb=800,
-            device=self.device
-        )
-
         # VL Complexity Classifier (ONNX, CPU-based)
         self.configs["vl-classifier"] = ModelConfig(
             name="vl-classifier",
@@ -326,68 +313,6 @@ class ModelManager:
             priority=1,  # Equal priority for all models
             estimated_vram_mb=0,  # ONNX runs on CPU
             device="cpu"
-        )
-
-        # Qwen3-Embedding-0.6B (embeddings + reranking) - Memory optimized
-        self.configs["qwen3-embed"] = ModelConfig(
-            name="qwen3-embed",
-            type="sentence_transformer",
-            hub_id=os.getenv("HF_MODEL_QWEN3_EMBED", "Qwen/Qwen3-Embedding-0.6B"),
-            priority=1,  # Equal priority for all models
-            estimated_vram_mb=1200,  # ~2GB with float16 (was 4GB with float32)
-            device=self.device
-        )
-
-        # Qwen3-rerank (alias for qwen3-embed)
-        self.configs["qwen3-rerank"] = ModelConfig(
-            name="qwen3-rerank",
-            type="alias",
-            path="qwen3-embed",  # Points to qwen3-embed
-            priority=1,  # Equal priority for all models
-            estimated_vram_mb=0,  # No additional VRAM (alias)
-            device=self.device
-        )
-
-        # ============================================================
-        # MXBAI-Embed-2D Models (2D Matryoshka - adaptive layer speedup)
-        # https://huggingface.co/mixedbread-ai/mxbai-embed-2d-large-v1
-        # 335M params, 1024D, 24 layers, English-only, Apache 2.0
-        # ============================================================
-
-        # MXBAI-Embed-2D Full (24 layers, 1024D - maximum quality)
-        self.configs["mxbai-embed-2d"] = ModelConfig(
-            name="mxbai-embed-2d",
-            type="sentence_transformer_2d",
-            hub_id=os.getenv("HF_MODEL_MXBAI_2D", "mixedbread-ai/mxbai-embed-2d-large-v1"),
-            priority=1,
-            estimated_vram_mb=800,
-            device=self.device,
-            truncate_layers=None,  # Use all 24 layers
-            truncate_dims=None  # Use full 1024D
-        )
-
-        # MXBAI-Embed-2D Fast (12 layers, 768D - ~2x speedup, ~15% quality loss)
-        self.configs["mxbai-embed-2d-fast"] = ModelConfig(
-            name="mxbai-embed-2d-fast",
-            type="sentence_transformer_2d",
-            hub_id=os.getenv("HF_MODEL_MXBAI_2D", "mixedbread-ai/mxbai-embed-2d-large-v1"),
-            priority=1,
-            estimated_vram_mb=400,  # Less VRAM with fewer layers
-            device=self.device,
-            truncate_layers=12,  # Use 12 of 24 layers
-            truncate_dims=768  # Truncate to 768D
-        )
-
-        # MXBAI-Embed-2D Turbo (6 layers, 512D - ~4x speedup, ~20% quality loss)
-        self.configs["mxbai-embed-2d-turbo"] = ModelConfig(
-            name="mxbai-embed-2d-turbo",
-            type="sentence_transformer_2d",
-            hub_id=os.getenv("HF_MODEL_MXBAI_2D", "mixedbread-ai/mxbai-embed-2d-large-v1"),
-            priority=1,
-            estimated_vram_mb=250,  # Even less VRAM
-            device=self.device,
-            truncate_layers=6,  # Use 6 of 24 layers
-            truncate_dims=512  # Truncate to 512D
         )
 
         # ============================================================
@@ -454,53 +379,6 @@ class ModelManager:
             priority=1,
             estimated_vram_mb=0,  # CPU only
             device="cpu"
-        )
-
-        # ============================================================
-        # Causal Language Models (for Anthropic-compatible API)
-        # These models are used with the /v1/messages endpoint
-        # ============================================================
-
-        # Qwen2.5-Coder-7B-Instruct (excellent for code generation)
-        # https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct
-        # 7B params, 32K context, native tool calling
-        self.configs["qwen2.5-coder-7b"] = ModelConfig(
-            name="qwen2.5-coder-7b",
-            type="causal_lm",
-            hub_id=os.getenv("HF_MODEL_QWEN_CODER", "Qwen/Qwen2.5-Coder-7B-Instruct"),
-            priority=1,
-            estimated_vram_mb=4500,  # ~4.5GB with 4-bit quantization
-            device=self.device,
-            quantize_4bit=True,
-            context_length=32768
-        )
-
-        # Qwen2.5-Coder-3B-Instruct (lighter alternative)
-        # https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct
-        # 3B params, 32K context, native tool calling
-        self.configs["qwen2.5-coder-3b"] = ModelConfig(
-            name="qwen2.5-coder-3b",
-            type="causal_lm",
-            hub_id=os.getenv("HF_MODEL_QWEN_CODER_3B", "Qwen/Qwen2.5-Coder-3B-Instruct"),
-            priority=1,
-            estimated_vram_mb=2000,  # ~2GB with 4-bit quantization
-            device=self.device,
-            quantize_4bit=True,
-            context_length=32768
-        )
-
-        # Qwen2.5-Coder-1.5B-Instruct (minimal footprint)
-        # https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct
-        # 1.5B params, 32K context
-        self.configs["qwen2.5-coder-1.5b"] = ModelConfig(
-            name="qwen2.5-coder-1.5b",
-            type="causal_lm",
-            hub_id=os.getenv("HF_MODEL_QWEN_CODER_1B", "Qwen/Qwen2.5-Coder-1.5B-Instruct"),
-            priority=1,
-            estimated_vram_mb=1200,  # ~1.2GB with 4-bit quantization
-            device=self.device,
-            quantize_4bit=True,
-            context_length=32768
         )
 
         # ============================================================
@@ -910,61 +788,12 @@ class ModelManager:
                 if SentenceTransformer is None:
                     raise ImportError("sentence-transformers not installed")
                 
-                # Special handling for Qwen3 models - optimize memory usage
-                if name in ["qwen3-embed", "qwen3-rerank"]:
-                    # Try 4-bit quantization first if available
-                    quantization_attempted = False
-                    
-                    if BNB_AVAILABLE and BitsAndBytesConfig is not None and self.device == "cuda":
-                        try:
-                            # Use 4-bit quantization for memory efficiency
-                            logger.info(f"Attempting to load {name} with 4-bit quantization...")
-                            
-                            # Create quantization config
-                            quantization_config = BitsAndBytesConfig(
-                                load_in_4bit=True,
-                                bnb_4bit_use_double_quant=True,  # Further compression
-                                bnb_4bit_quant_type="nf4",  # Normal Float 4 for better quality
-                                bnb_4bit_compute_dtype=torch.float16  # Compute in fp16 for speed
-                            )
-                            
-                            # Load with quantization
-                            model = SentenceTransformer(
-                                config.hub_id,
-                                trust_remote_code=self._trust_remote_code(config.hub_id),
-                                device=config.device,
-                                model_kwargs={
-                                    "quantization_config": quantization_config,
-                                    "device_map": "auto",
-                                    "torch_dtype": torch.float16
-                                }
-                            )
-                            logger.info(f"✅ {name} loaded with 4-bit quantization (memory usage reduced by ~75%)")
-                            quantization_attempted = True
-                        except Exception as e:
-                            logger.warning(f"4-bit quantization failed: {e}. Falling back to float16...")
-                            quantization_attempted = False
-                    
-                    # Fallback to float16 for memory reduction
-                    if not quantization_attempted:
-                        logger.info(f"Loading {name} with float16 precision for memory optimization")
-                        model = SentenceTransformer(
-                            config.hub_id,
-                            trust_remote_code=self._trust_remote_code(config.hub_id),
-                            device=config.device,
-                            model_kwargs={
-                                "torch_dtype": torch.float16
-                            }
-                        )
-                        logger.info(f"✅ {name} loaded with float16 (memory usage reduced by ~50%)")
-                else:
-                    # Standard loading for other models
-                    model = SentenceTransformer(
-                        config.hub_id,
-                        trust_remote_code=self._trust_remote_code(config.hub_id),
-                        device=config.device
-                    )
-                    logger.info(f"✅ {name} loaded (SentenceTransformer)")
+                model = SentenceTransformer(
+                    config.hub_id,
+                    trust_remote_code=self._trust_remote_code(config.hub_id),
+                    device=config.device
+                )
+                logger.info(f"✅ {name} loaded (SentenceTransformer)")
 
                 # Store truncate_dims for Matryoshka models
                 if config.truncate_dims:

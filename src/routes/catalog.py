@@ -13,28 +13,22 @@ async def root():
     model_info = {
         "m2v-bge-m3-1024d": "M2V-BGE-M3 (PRIMARY) - Distilled from BGE-M3 | MTEB: 0.47 | 3x energy efficient | 14k texts/s",
         "bge-m3-onnx": "BGE-M3 ONNX INT8 (CPU) - High quality embeddings | MTEB: ~0.60 | 1024D",
-        "gemma-768d": "Gemma-768D Model2Vec (LEGACY) - Multilingual | MTEB: 0.55",
-        "qwen3-rerank": "Qwen3 FP32 Reranking - FASTEST + BEST PRECISION (242ms for 3 docs!)",
+        "bge-m3-matryoshka": "BGE-M3 Matryoshka ONNX INT8 - Fine-tuned for FR notarial | 1024D | CPU optimized",
+        "bge-reranker-v2-m3": "BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT) - Cross-encoder | MIRACL FR 59.6 | 350ms | CPU",
+        "mxbai-rerank-v2": "MXBAI-Rerank-V2 - Cross-encoder | BEIR 55.57 | 100+ languages",
+        "mxbai-rerank-xsmall": "MXBAI-Rerank-XSmall - Lighter cross-encoder | 278M params",
         "vl-classifier": "Document Complexity Classifier - ResNet18 ONNX INT8 (93% accuracy, ~10ms)",
-        "qwen2.5-coder-7b": "Qwen2.5-Coder-7B - LLM for code generation | 32K context | Tool calling",
-        "qwen2.5-coder-3b": "Qwen2.5-Coder-3B - Lighter LLM | 32K context | Tool calling",
-        "qwen2.5-coder-1.5b": "Qwen2.5-Coder-1.5B - Minimal LLM | 32K context",
+        "lfm25-vl": "LFM2.5-VL-1.6B Vision-Language | Document OCR | Edge-first CPU design",
         "whisper-base": "Whisper Base - Audio transcription (default) | 5.0% WER | ~1GB RAM",
         "whisper-small": "Whisper Small - Better accuracy transcription | 3.4% WER | ~2GB RAM",
     }
 
     return {
-        "service": "Deposium Embeddings + Anthropic-compatible LLM API + Audio",
+        "service": "Deposium Embeddings + Audio",
         "status": "running",
-        "version": "13.0.0",
+        "version": "14.0.0",
         "models": model_info,
-        "recommended": "m2v-bge-m3-1024d for embeddings, qwen2.5-coder-7b for code generation via /v1/messages",
-        "anthropic_api": {
-            "endpoint": "/v1/messages",
-            "description": "Anthropic-compatible API for local LLMs (Claude Code compatible)",
-            "usage": "export ANTHROPIC_BASE_URL=http://localhost:8000 && claude --model qwen2.5-coder-7b",
-            "features": ["streaming", "tool_calling", "system_prompts"],
-        },
+        "recommended": "m2v-bge-m3-1024d for embeddings, bge-reranker-v2-m3 for reranking",
         "quality_metrics": {
             "m2v-bge-m3-1024d": {
                 "overall_mteb": 0.47,
@@ -46,34 +40,33 @@ async def root():
                 "params": "1.54B distilled to 21MB",
                 "energy_efficiency": "3x more efficient than SentenceTransformers",
                 "throughput": "14,171 texts/s (vs 2,587 for MiniLM)",
-                "texts_per_wh": 3191024,
                 "use_case": "Primary model - fast RAG, bulk processing, energy-efficient deployments"
             },
             "bge-m3-onnx": {
                 "overall_mteb": 0.60,
                 "dimensions": 1024,
-                "size_mb": 150,
+                "size_mb": 571,
                 "quantization": "INT8 ONNX",
                 "device": "CPU optimized",
                 "use_case": "High quality CPU embeddings when GPU not available"
             },
-            "gemma-768d": {
-                "overall_mteb": 0.55,
-                "semantic_similarity": 0.59,
-                "multilingual": 0.74,
-                "dimensions": 768,
-                "size_mb": 400,
-                "params": "~50M",
-                "use_case": "Legacy - multilingual support"
+            "bge-m3-matryoshka": {
+                "dimensions": 1024,
+                "size_mb": 571,
+                "quantization": "INT8 ONNX",
+                "device": "CPU optimized",
+                "fine_tuned": "FR notarial domain (Matryoshka loss)",
+                "use_case": "Domain-specific French embeddings with flexible dimensionality"
             },
-            "qwen3-rerank": {
-                "mteb_score": 64.33,
-                "retrieval_score": 76.17,
-                "params": "596M",
-                "speed": "242ms for 3 docs (Railway vCPU)",
-                "precision": "BEST (0.126 separation Paris-London)",
-                "quantization": "FP32 (environment optimizations make it fastest!)",
-                "use_case": "Reranking - best speed + precision on Railway vCPU"
+            "bge-reranker-v2-m3": {
+                "miracl_fr": 59.6,
+                "params": "279M",
+                "size_mb": 544,
+                "speed": "350ms avg (Railway vCPU)",
+                "cold_start": "275ms",
+                "quantization": "INT8 ONNX (CPU optimized)",
+                "precision_at_3": 1.00,
+                "use_case": "DEFAULT reranker - cross-encoder, 10x faster than mxbai on CPU"
             },
             "vl-classifier": {
                 "architecture": "ResNet18 ONNX INT8",
@@ -84,36 +77,11 @@ async def root():
                 "size_mb": 11,
                 "classes": ["LOW", "HIGH"],
                 "use_case": "Document routing - simple (OCR) vs complex (VLM)"
-            },
-            "qwen2.5-coder-7b": {
-                "params": "7B",
-                "context_length": 32768,
-                "quantization": "4-bit NF4",
-                "vram_gb": 4.5,
-                "features": ["code_generation", "tool_calling", "streaming"],
-                "use_case": "Anthropic-compatible LLM for code generation (Claude Code compatible)"
-            },
-            "qwen2.5-coder-3b": {
-                "params": "3B",
-                "context_length": 32768,
-                "quantization": "4-bit NF4",
-                "vram_gb": 2.0,
-                "features": ["code_generation", "tool_calling", "streaming"],
-                "use_case": "Lighter LLM for code generation with less VRAM"
-            },
-            "qwen2.5-coder-1.5b": {
-                "params": "1.5B",
-                "context_length": 32768,
-                "quantization": "4-bit NF4",
-                "vram_gb": 1.2,
-                "features": ["code_generation", "streaming"],
-                "use_case": "Minimal LLM for basic code tasks with minimal VRAM"
             }
         },
         "energy_benchmark": {
             "note": "Custom benchmark using CodeCarbon (Model2Vec not compatible with AIEnergyScore)",
             "m2v-bge-m3-1024d": {"texts_per_wh": 3191024, "throughput": "14,171 texts/s"},
-            "m2v-qwen3-1024d": {"texts_per_wh": 3047706, "throughput": "14,056 texts/s"},
             "all-MiniLM-L6-v2": {"texts_per_wh": 1129181, "throughput": "2,587 texts/s"},
             "comparison": "Model2Vec is ~3x more energy efficient than SentenceTransformers"
         }
@@ -155,24 +123,24 @@ async def list_models():
         },
         {
             "name": "bge-m3-onnx",
-            "size": 150000000,
+            "size": 571000000,
             "digest": "bge-m3-onnx-int8",
             "modified_at": "2025-12-05T00:00:00Z",
             "details": "BGE-M3 ONNX INT8 (CPU) - High quality embeddings | MTEB: ~0.60 | 1024D"
         },
         {
-            "name": "gemma-768d",
-            "size": 400000000,
-            "digest": "gemma-768d-m2v-deposium",
-            "modified_at": "2025-10-13T00:00:00Z",
-            "details": "Gemma-768D (LEGACY) - Multilingual | MTEB: 0.55"
+            "name": "bge-m3-matryoshka",
+            "size": 571000000,
+            "digest": "bge-m3-matryoshka-1024d-onnx-int8",
+            "modified_at": "2026-02-27T00:00:00Z",
+            "details": "BGE-M3 Matryoshka ONNX INT8 - Fine-tuned FR notarial | 1024D | CPU optimized"
         },
         {
-            "name": "qwen3-rerank",
-            "size": 600000000,
-            "digest": "qwen3-rerank-fp32-optimized",
-            "modified_at": "2025-10-14T00:00:00Z",
-            "details": "Qwen3 FP32 Reranking - FASTEST (242ms) + BEST PRECISION on Railway vCPU!"
+            "name": "bge-reranker-v2-m3",
+            "size": 544000000,
+            "digest": "bge-reranker-v2-m3-onnx-int8",
+            "modified_at": "2026-02-27T00:00:00Z",
+            "details": "BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT) - Cross-encoder | MIRACL FR 59.6 | 350ms | CPU"
         },
         {
             "name": "vl-classifier",
@@ -180,27 +148,6 @@ async def list_models():
             "digest": "resnet18-onnx-int8",
             "modified_at": "2025-10-22T00:00:00Z",
             "details": "Document Complexity Classifier - 93% accuracy, ~10ms latency"
-        },
-        {
-            "name": "mxbai-embed-2d",
-            "size": 800000000,
-            "digest": "mxbai-embed-2d-large-v1",
-            "modified_at": "2026-01-10T00:00:00Z",
-            "details": "MXBAI-Embed-2D (24 layers) - 2D Matryoshka SOTA English | 1024D"
-        },
-        {
-            "name": "mxbai-embed-2d-fast",
-            "size": 400000000,
-            "digest": "mxbai-embed-2d-large-v1-12layers",
-            "modified_at": "2026-01-10T00:00:00Z",
-            "details": "MXBAI-Embed-2D Fast (12 layers) - ~2x speedup | 768D"
-        },
-        {
-            "name": "mxbai-embed-2d-turbo",
-            "size": 250000000,
-            "digest": "mxbai-embed-2d-large-v1-6layers",
-            "modified_at": "2026-01-10T00:00:00Z",
-            "details": "MXBAI-Embed-2D Turbo (6 layers) - ~4x speedup | 512D"
         },
         {
             "name": "mxbai-rerank-v2",
@@ -222,27 +169,6 @@ async def list_models():
             "digest": "lfm25-vl-1.6b",
             "modified_at": "2026-01-11T00:00:00Z",
             "details": "LFM2.5-VL-1.6B Vision-Language | Document OCR | Edge-first CPU design | 1.6B params"
-        },
-        {
-            "name": "qwen2.5-coder-7b",
-            "size": 4500000000,
-            "digest": "qwen2.5-coder-7b-instruct-4bit",
-            "modified_at": "2026-01-23T00:00:00Z",
-            "details": "Qwen2.5-Coder-7B | LLM for /v1/messages | 32K context | Tool calling | 4-bit NF4"
-        },
-        {
-            "name": "qwen2.5-coder-3b",
-            "size": 2000000000,
-            "digest": "qwen2.5-coder-3b-instruct-4bit",
-            "modified_at": "2026-01-23T00:00:00Z",
-            "details": "Qwen2.5-Coder-3B | Lighter LLM for /v1/messages | 32K context | Tool calling | 4-bit NF4"
-        },
-        {
-            "name": "qwen2.5-coder-1.5b",
-            "size": 1200000000,
-            "digest": "qwen2.5-coder-1.5b-instruct-4bit",
-            "modified_at": "2026-01-23T00:00:00Z",
-            "details": "Qwen2.5-Coder-1.5B | Minimal LLM for /v1/messages | 32K context | 4-bit NF4"
         },
         {
             "name": "whisper-tiny",

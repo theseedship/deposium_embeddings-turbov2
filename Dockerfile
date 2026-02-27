@@ -73,9 +73,7 @@ COPY src/ ./src/
 # - M2V-BGE-M3-1024D (PRIMARY) ~21MB - tss-deposium/m2v-bge-m3-1024d
 # - BGE-M3-ONNX INT8 (CPU) ~571MB - gpahal/bge-m3-onnx-int8
 # - BGE-M3-Matryoshka ONNX INT8 ~571MB - tss-deposium/bge-m3-matryoshka-1024d-onnx-int8
-# - Gemma-768D (LEGACY) ~400MB - tss-deposium/gemma-deposium-768d
 # - BGE-Reranker-v2-m3 ONNX INT8 ~544MB - tss-deposium/bge-reranker-v2-m3-onnx-int8 (pre-downloaded)
-# - Qwen3-Embedding-0.6B (RERANK) ~600MB - Qwen/Qwen3-Embedding-0.6B
 # Models cached on Railway volume (/app/models) between deployments
 
 # Create cache directory for models (Railway volume will override)
