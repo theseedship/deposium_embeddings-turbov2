@@ -113,6 +113,22 @@ async def initialize_models():
     logger.info("  - bge-reranker-v2-m3: BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT reranker)")
     logger.info("  - vl-classifier: Document complexity classifier (ONNX, standalone)")
 
+    # Preload critical models at startup (eliminates cold-start latency)
+    preload_models = os.getenv("PRELOAD_MODELS", "bge-m3-matryoshka,bge-reranker-v2-m3")
+    if preload_models:
+        for model_name in preload_models.split(","):
+            model_name = model_name.strip()
+            if model_name and model_name in shared.model_manager.configs:
+                try:
+                    t0 = asyncio.get_event_loop().time()
+                    shared.model_manager.get_model(model_name)
+                    dt = (asyncio.get_event_loop().time() - t0) * 1000
+                    logger.info(f"  ✅ Preloaded {model_name} ({dt:.0f}ms)")
+                except Exception as e:
+                    logger.warning(f"  ⚠️  Could not preload {model_name}: {e}")
+            elif model_name:
+                logger.warning(f"  ⚠️  Unknown model to preload: {model_name}")
+
     # Start background cleanup task
     async def model_cleanup_loop():
         """Background task to cleanup inactive models."""
