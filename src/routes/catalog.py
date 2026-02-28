@@ -14,6 +14,7 @@ async def root():
         "m2v-bge-m3-1024d": "M2V-BGE-M3 (PRIMARY) - Distilled from BGE-M3 | MTEB: 0.47 | 3x energy efficient | 14k texts/s",
         "bge-m3-onnx": "BGE-M3 ONNX INT8 (CPU) - High quality embeddings | MTEB: ~0.60 | 1024D",
         "bge-m3-matryoshka": "BGE-M3 Matryoshka ONNX INT8 - Fine-tuned for FR notarial | 1024D | CPU optimized",
+        "pplx-embed-v1": "PPLX-Embed-v1 Q4 ONNX (0.6B) - Best FR notarial P@3=1.00 | 1024D | 380MB | CPU",
         "bge-reranker-v2-m3": "BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT) - Cross-encoder | MIRACL FR 59.6 | 350ms | CPU",
         "mxbai-rerank-v2": "MXBAI-Rerank-V2 - Cross-encoder | BEIR 55.57 | 100+ languages",
         "mxbai-rerank-xsmall": "MXBAI-Rerank-XSmall - Lighter cross-encoder | 278M params",
@@ -57,6 +58,17 @@ async def root():
                 "device": "CPU optimized",
                 "fine_tuned": "FR notarial domain (Matryoshka loss)",
                 "use_case": "Domain-specific French embeddings with flexible dimensionality"
+            },
+            "pplx-embed-v1": {
+                "dimensions": 1024,
+                "size_mb": 380,
+                "quantization": "Q4 ONNX",
+                "device": "CPU optimized",
+                "params": "0.6B",
+                "precision_at_3": 1.00,
+                "spread_vs_bge_m3": "2.5x better",
+                "latency_ms": 635,
+                "use_case": "Best FR notarial embeddings - beats bge-m3 on domain benchmarks"
             },
             "bge-reranker-v2-m3": {
                 "miracl_fr": 59.6,
@@ -134,6 +146,13 @@ async def list_models():
             "digest": "bge-m3-matryoshka-1024d-onnx-int8",
             "modified_at": "2026-02-27T00:00:00Z",
             "details": "BGE-M3 Matryoshka ONNX INT8 - Fine-tuned FR notarial | 1024D | CPU optimized"
+        },
+        {
+            "name": "pplx-embed-v1",
+            "size": 380000000,
+            "digest": "pplx-embed-v1-0.6b-q4-onnx",
+            "modified_at": "2026-02-28T00:00:00Z",
+            "details": "PPLX-Embed-v1 Q4 ONNX (0.6B) - Best FR notarial P@3=1.00 | 1024D | 380MB | CPU"
         },
         {
             "name": "bge-reranker-v2-m3",

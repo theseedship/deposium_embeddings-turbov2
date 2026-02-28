@@ -73,6 +73,7 @@ COPY src/ ./src/
 # - M2V-BGE-M3-1024D (PRIMARY) ~21MB - tss-deposium/m2v-bge-m3-1024d
 # - BGE-M3-ONNX INT8 (CPU) ~571MB - gpahal/bge-m3-onnx-int8
 # - BGE-M3-Matryoshka ONNX INT8 ~571MB - tss-deposium/bge-m3-matryoshka-1024d-onnx-int8
+# - PPLX-Embed-v1 Q4 ONNX ~380MB - perplexity-ai/pplx-embed-v1-0.6B (pre-downloaded)
 # - BGE-Reranker-v2-m3 ONNX INT8 ~544MB - tss-deposium/bge-reranker-v2-m3-onnx-int8 (pre-downloaded)
 # Models cached on Railway volume (/app/models) between deployments
 
@@ -90,6 +91,20 @@ files = ['model_quantized.onnx', 'config.json', 'tokenizer.json', 'tokenizer_con
 [shutil.copy(hf_hub_download(repo_id='tss-deposium/bge-reranker-v2-m3-onnx-int8', filename=f, token=False), \
   f'/app/local_models/bge-reranker-v2-m3-onnx-int8/{f}') for f in files]; \
 print('BGE-Reranker-v2-m3 ONNX INT8 pre-downloaded to /app/local_models/')"
+
+# Pre-download PPLX-Embed-v1 Q4 ONNX at build time to /app/local_models/
+# 380MB model, avoids OOM during runtime download on Railway
+RUN mkdir -p /app/local_models/pplx-embed-v1-q4 && \
+    python -c "\
+from huggingface_hub import hf_hub_download; \
+import shutil, os; \
+onnx_files = [('onnx/model_q4.onnx', 'model_q4.onnx'), ('onnx/model_q4.onnx_data', 'model_q4.onnx_data')]; \
+tok_files = ['tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json', 'config.json']; \
+[shutil.copy(hf_hub_download(repo_id='perplexity-ai/pplx-embed-v1-0.6B', filename=src, token=False), \
+  f'/app/local_models/pplx-embed-v1-q4/{dst}') for src, dst in onnx_files]; \
+[shutil.copy(hf_hub_download(repo_id='perplexity-ai/pplx-embed-v1-0.6B', filename=f, token=False), \
+  f'/app/local_models/pplx-embed-v1-q4/{f}') for f in tok_files]; \
+print('PPLX-Embed-v1 Q4 ONNX pre-downloaded to /app/local_models/')"
 
 # Note: Running as root to allow writing to Railway volume at /app/models
 # The Railway volume is mounted with root permissions and cannot be written by non-root user

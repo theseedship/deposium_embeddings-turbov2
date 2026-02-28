@@ -110,6 +110,7 @@ async def initialize_models():
     logger.info("  - m2v-bge-m3-1024d: Distilled BGE-M3 embeddings")
     logger.info("  - bge-m3-onnx: BGE-M3 ONNX INT8 for CPU")
     logger.info("  - bge-m3-matryoshka: BGE-M3 Matryoshka ONNX INT8 (FR fine-tuned)")
+    logger.info("  - pplx-embed-v1: PPLX-Embed-v1 Q4 ONNX (0.6B, best FR notarial)")
     logger.info("  - bge-reranker-v2-m3: BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT reranker)")
     logger.info("  - vl-classifier: Document complexity classifier (ONNX, standalone)")
 

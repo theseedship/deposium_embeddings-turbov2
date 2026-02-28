@@ -93,12 +93,20 @@ class OnnxEmbeddingModel:
         providers = ['CPUExecutionProvider']
         self.session = ort.InferenceSession(model_path, providers=providers, sess_options=_onnx_session_options())
 
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        # Load tokenizer (trust_remote_code for models like pplx-embed)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
 
         # Auto-detect output format
         output_names = [o.name for o in self.session.get_outputs()]
-        if "dense_vecs" in output_names:
+        if "pooler_output_int8" in output_names:
+            # Quantized pooler output (e.g. pplx-embed Q4)
+            self.output_name = "pooler_output_int8"
+            self.needs_pooling = False
+        elif "pooler_output" in output_names:
+            # Standard pooler output (pre-pooled CLS token)
+            self.output_name = "pooler_output"
+            self.needs_pooling = False
+        elif "dense_vecs" in output_names:
             # gpahal/bge-m3-onnx-int8: pre-pooled output
             self.output_name = "dense_vecs"
             self.needs_pooling = False
@@ -300,6 +308,19 @@ class ModelManager:
             type="onnx_embedding",
             path="models/bge-m3-matryoshka-onnx-int8",
             hub_id=os.getenv("HF_MODEL_BGE_M3_MATRYOSHKA", "tss-deposium/bge-m3-matryoshka-1024d-onnx-int8"),
+            priority=1,
+            estimated_vram_mb=0,  # ONNX runs on CPU
+            device="cpu"
+        )
+
+        # PPLX-Embed-v1 Q4 ONNX (Perplexity, 0.6B, 380MB)
+        # P@3=1.00 on FR notarial benchmark, 2.5x better spread than bge-m3
+        # 1024D embeddings, ~635ms latency on CPU
+        self.configs["pplx-embed-v1"] = ModelConfig(
+            name="pplx-embed-v1",
+            type="onnx_embedding",
+            path="models/pplx-embed-v1-q4",
+            hub_id=os.getenv("HF_MODEL_PPLX_EMBED", "perplexity-ai/pplx-embed-v1-0.6B"),
             priority=1,
             estimated_vram_mb=0,  # ONNX runs on CPU
             device="cpu"
@@ -699,8 +720,8 @@ class ModelManager:
                     raise ImportError("onnxruntime and transformers required for ONNX embedding models")
 
                 def _find_onnx_file(directory: Path) -> Path:
-                    """Find ONNX model file in directory (model_quantized.onnx or model.onnx)."""
-                    for candidate in ["model_quantized.onnx", "model.onnx"]:
+                    """Find ONNX model file in directory."""
+                    for candidate in ["model_quantized.onnx", "model_q4.onnx", "model.onnx"]:
                         f = directory / candidate
                         if f.exists():
                             return f
@@ -730,12 +751,17 @@ class ModelManager:
                             return snapshot_download(repo_id=config.hub_id, token=False)
 
                     cache_dir = _download_onnx_embedding()
+                    # Some models (e.g. pplx-embed) put ONNX files in an onnx/ subfolder
+                    onnx_subdir = Path(cache_dir) / "onnx"
+                    search_dir = onnx_subdir if onnx_subdir.exists() else Path(cache_dir)
                     try:
-                        model_file = _find_onnx_file(Path(cache_dir))
+                        model_file = _find_onnx_file(search_dir)
                     except FileNotFoundError:
                         logger.warning(f"ONNX file missing from cache, forcing re-download...")
                         cache_dir = snapshot_download(repo_id=config.hub_id, token=False, force_download=True)
-                        model_file = _find_onnx_file(Path(cache_dir))
+                        onnx_subdir = Path(cache_dir) / "onnx"
+                        search_dir = onnx_subdir if onnx_subdir.exists() else Path(cache_dir)
+                        model_file = _find_onnx_file(search_dir)
                     model = OnnxEmbeddingModel(str(model_file), cache_dir)
                     logger.info(f"✅ {name} loaded from HuggingFace (ONNX CPU)")
 
