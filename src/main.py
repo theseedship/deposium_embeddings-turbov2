@@ -115,7 +115,7 @@ async def initialize_models():
     logger.info("  - vl-classifier: Document complexity classifier (ONNX, standalone)")
 
     # Preload critical models at startup (eliminates cold-start latency)
-    preload_models = os.getenv("PRELOAD_MODELS", "bge-m3-matryoshka,bge-reranker-v2-m3")
+    preload_models = os.getenv("PRELOAD_MODELS", "pplx-embed-v1,bge-reranker-v2-m3")
     if preload_models:
         for model_name in preload_models.split(","):
             model_name = model_name.strip()

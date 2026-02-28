@@ -19,7 +19,7 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 model_manager = None
 
 # Default model names from environment variables
-DEFAULT_EMBEDDING_MODEL = os.getenv("DEFAULT_EMBEDDING_MODEL", "m2v-bge-m3-1024d")
+DEFAULT_EMBEDDING_MODEL = os.getenv("DEFAULT_EMBEDDING_MODEL", "pplx-embed-v1")
 DEFAULT_RERANK_MODEL = os.getenv("DEFAULT_RERANK_MODEL", "bge-reranker-v2-m3")
 
 # Whisper availability

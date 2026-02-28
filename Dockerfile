@@ -30,7 +30,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Model Configuration (defaults - can be overridden at runtime)
-ENV DEFAULT_EMBEDDING_MODEL=m2v-bge-m3-1024d \
+ENV DEFAULT_EMBEDDING_MODEL=pplx-embed-v1 \
     DEFAULT_RERANK_MODEL=bge-reranker-v2-m3
 
 # Model Cache (uses Railway volume at /app/models)

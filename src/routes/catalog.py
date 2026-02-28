@@ -29,7 +29,7 @@ async def root():
         "status": "running",
         "version": "14.0.0",
         "models": model_info,
-        "recommended": "m2v-bge-m3-1024d for embeddings, bge-reranker-v2-m3 for reranking",
+        "recommended": "pplx-embed-v1 for embeddings, bge-reranker-v2-m3 for reranking",
         "quality_metrics": {
             "m2v-bge-m3-1024d": {
                 "overall_mteb": 0.47,
