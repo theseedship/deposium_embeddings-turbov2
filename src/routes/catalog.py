@@ -18,7 +18,8 @@ async def root():
         "bge-reranker-v2-m3": "BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT) - Cross-encoder | MIRACL FR 59.6 | 350ms | CPU",
         "mxbai-rerank-v2": "MXBAI-Rerank-V2 - Cross-encoder | BEIR 55.57 | 100+ languages",
         "mxbai-rerank-xsmall": "MXBAI-Rerank-XSmall - Lighter cross-encoder | 278M params",
-        "vl-classifier": "Document Complexity Classifier - ResNet18 ONNX INT8 (93% accuracy, ~10ms)",
+        "clip-classifier": "CLIP ViT-B/32 Zero-Shot Classifier - ONNX uint8 (153MB, ~20ms, zero-shot SIMPLE/COMPLEX)",
+        "vl-classifier": "Document Complexity Classifier - ResNet18 ONNX INT8 (11MB, ~10ms, legacy fallback)",
         "lfm25-vl": "LFM2.5-VL-1.6B Vision-Language | Document OCR | Edge-first CPU design",
         "whisper-base": "Whisper Base - Audio transcription (default) | 5.0% WER | ~1GB RAM",
         "whisper-small": "Whisper Small - Better accuracy transcription | 3.4% WER | ~2GB RAM",
@@ -80,15 +81,25 @@ async def root():
                 "precision_at_3": 1.00,
                 "use_case": "DEFAULT reranker - cross-encoder, 10x faster than mxbai on CPU"
             },
+            "clip-classifier": {
+                "architecture": "CLIP ViT-B/32 ONNX uint8 (zero-shot)",
+                "accuracy": 1.00,
+                "params": "87M",
+                "latency": "17-25ms on CPU",
+                "size_mb": 153,
+                "classes": ["LOW", "HIGH"],
+                "labels": {"SIMPLE": "LOW", "COMPLEX": "HIGH"},
+                "use_case": "Document routing - zero-shot, no retraining needed"
+            },
             "vl-classifier": {
-                "architecture": "ResNet18 ONNX INT8",
+                "architecture": "ResNet18 ONNX INT8 (legacy fallback)",
                 "accuracy": 0.93,
                 "high_recall": 1.00,
                 "params": "11M",
                 "latency": "10-17ms on CPU",
                 "size_mb": 11,
                 "classes": ["LOW", "HIGH"],
-                "use_case": "Document routing - simple (OCR) vs complex (VLM)"
+                "use_case": "Document routing fallback - simpler but less accurate"
             }
         },
         "energy_benchmark": {
@@ -162,11 +173,18 @@ async def list_models():
             "details": "BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT) - Cross-encoder | MIRACL FR 59.6 | 350ms | CPU"
         },
         {
+            "name": "clip-classifier",
+            "size": 153000000,
+            "digest": "clip-vit-base-patch32-onnx-uint8",
+            "modified_at": "2026-03-03T00:00:00Z",
+            "details": "CLIP ViT-B/32 Zero-Shot Classifier - 100% accuracy, ~20ms, zero-shot SIMPLE/COMPLEX"
+        },
+        {
             "name": "vl-classifier",
             "size": 11000000,
             "digest": "resnet18-onnx-int8",
             "modified_at": "2025-10-22T00:00:00Z",
-            "details": "Document Complexity Classifier - 93% accuracy, ~10ms latency"
+            "details": "Document Complexity Classifier - ResNet18, 93% accuracy, ~10ms (legacy fallback)"
         },
         {
             "name": "mxbai-rerank-v2",

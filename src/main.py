@@ -112,10 +112,11 @@ async def initialize_models():
     logger.info("  - bge-m3-matryoshka: BGE-M3 Matryoshka ONNX INT8 (FR fine-tuned)")
     logger.info("  - pplx-embed-v1: PPLX-Embed-v1 Q4 ONNX (0.6B, best FR notarial)")
     logger.info("  - bge-reranker-v2-m3: BGE-Reranker-v2-m3 ONNX INT8 (DEFAULT reranker)")
-    logger.info("  - vl-classifier: Document complexity classifier (ONNX, standalone)")
+    logger.info("  - clip-classifier: CLIP ViT-B/32 zero-shot complexity classifier (ONNX, 153MB, ~20ms)")
+    logger.info("  - vl-classifier: ResNet18 complexity classifier (ONNX, 11MB, ~10ms, legacy fallback)")
 
     # Preload critical models at startup (eliminates cold-start latency)
-    preload_models = os.getenv("PRELOAD_MODELS", "pplx-embed-v1,bge-reranker-v2-m3")
+    preload_models = os.getenv("PRELOAD_MODELS", "pplx-embed-v1,bge-reranker-v2-m3,clip-classifier")
     if preload_models:
         for model_name in preload_models.split(","):
             model_name = model_name.strip()

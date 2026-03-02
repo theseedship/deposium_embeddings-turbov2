@@ -19,14 +19,15 @@ router = APIRouter()
 @router.post("/api/classify/file")
 async def classify_document_file(
     file: UploadFile = File(...),
-    model: str = "vl-classifier",
+    model: str = "clip-classifier",
     api_key: str = Depends(shared.verify_api_key)
 ):
     """
     Classify document complexity from uploaded file (multipart/form-data).
 
     **Models:**
-    - vl-classifier: ResNet18 ONNX (fast, ~10ms)
+    - clip-classifier: CLIP ViT-B/32 zero-shot ONNX (153MB, ~20ms) - default
+    - vl-classifier: ResNet18 ONNX (11MB, ~10ms, legacy fallback)
     - lfm25-vl: LFM2.5-VL-1.6B VLM (accurate, ~10-15s)
 
     **Usage:**
@@ -34,7 +35,7 @@ async def classify_document_file(
     curl -X POST http://localhost:11435/api/classify/file \\
       -H "X-API-Key: YOUR_API_KEY" \\
       -F "file=@document.jpg" \\
-      -F "model=vl-classifier"
+      -F "model=clip-classifier"
     ```
 
     **Returns:**
@@ -128,7 +129,8 @@ async def classify_document_base64(request: ClassifyRequest, api_key: str = Depe
     Classify document complexity from base64 encoded image (application/json).
 
     **Models:**
-    - vl-classifier: ResNet18 ONNX (fast, ~10ms) - default
+    - clip-classifier: CLIP ViT-B/32 zero-shot ONNX (153MB, ~20ms) - default
+    - vl-classifier: ResNet18 ONNX (11MB, ~10ms, legacy fallback)
     - lfm25-vl: LFM2.5-VL-1.6B VLM (accurate, ~10-15s)
 
     **Usage:**
