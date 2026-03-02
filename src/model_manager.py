@@ -221,7 +221,7 @@ class OnnxRerankerModel:
 class ModelConfig:
     """Configuration for a model."""
     name: str
-    type: str  # "model2vec", "sentence_transformer", "onnx_embedding", "onnx_reranker", "onnx_classifier", "mxbai_reranker", "vision_language", "causal_lm"
+    type: str  # "model2vec", "sentence_transformer", "onnx_embedding", "onnx_reranker", "onnx_classifier", "onnx_clip", "mxbai_reranker", "vision_language", "causal_lm"
     path: Optional[str] = None  # Local path
     hub_id: Optional[str] = None  # HuggingFace ID
     priority: int = 0  # Higher = kept in memory longer
@@ -326,12 +326,24 @@ class ModelManager:
             device="cpu"
         )
 
-        # VL Complexity Classifier (ONNX, CPU-based)
+        # VL Complexity Classifier (ResNet18 ONNX, CPU-based, legacy)
         self.configs["vl-classifier"] = ModelConfig(
             name="vl-classifier",
             type="onnx_classifier",
             path="src/models/complexity_classifier/model_quantized.onnx",
             priority=1,  # Equal priority for all models
+            estimated_vram_mb=0,  # ONNX runs on CPU
+            device="cpu"
+        )
+
+        # CLIP ViT-B/32 Zero-Shot Classifier (ONNX uint8, CPU-based)
+        # 153MB total (vision 85MB + text 62MB), ~20ms/image, zero-shot SIMPLE/COMPLEX
+        # Text labels encoded ONCE at startup → only vision encoder runs per image
+        self.configs["clip-classifier"] = ModelConfig(
+            name="clip-classifier",
+            type="onnx_clip",
+            path="models/clip-vit-base-patch32",
+            priority=1,
             estimated_vram_mb=0,  # ONNX runs on CPU
             device="cpu"
         )
@@ -713,6 +725,15 @@ class ModelManager:
                 providers = ['CPUExecutionProvider']  # Force CPU for consistency
                 model = ort.InferenceSession(str(model_path), providers=providers)
                 logger.info(f"✅ {name} loaded (ONNX on CPU)")
+
+            elif config.type == "onnx_clip":
+                # Load CLIP ViT-B/32 zero-shot classifier (vision + text ONNX sessions)
+                from src.clip_classifier_impl import ClipZeroShotClassifier
+                model_dir = Path(config.path)
+                if not model_dir.exists():
+                    raise ValueError(f"CLIP model directory not found: {config.path}")
+                model = ClipZeroShotClassifier(model_dir=model_dir)
+                logger.info(f"✅ {name} loaded (CLIP zero-shot ONNX, 153MB)")
 
             elif config.type == "onnx_embedding":
                 # Load ONNX embedding model (BGE-M3 ONNX INT8, Matryoshka ONNX INT8)

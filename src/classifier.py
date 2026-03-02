@@ -6,8 +6,10 @@ Binary classifier for routing documents to OCR or VLM pipelines.
 - LOW complexity: Plain text documents → OCR (~100ms)
 - HIGH complexity: Charts/diagrams → VLM reasoning (~2000ms)
 
-Model: ResNet18 ONNX quantized (11MB, ~10ms inference)
-Accuracy: 100% overall, 100% HIGH recall (distilled from CLIP)
+Primary model: CLIP ViT-B/32 ONNX uint8 (153MB, ~20ms/image, zero-shot)
+  - Labels: "SIMPLE" → LOW, "COMPLEX" → HIGH
+  - Text encoder runs once at startup, vision encoder per image
+Fallback:  ResNet18 ONNX quantized (11MB, ~10ms, distilled from CLIP)
 """
 
 from fastapi import UploadFile
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 class ClassifyRequest(BaseModel):
     """Request model for complexity classification."""
     image: Optional[str] = None  # Base64 encoded image
-    model: str = "vl-classifier"  # Model to use: "vl-classifier" (ResNet18) or "lfm25-vl" (VLM)
+    model: str = "clip-classifier"  # Model to use: "clip-classifier" (CLIP ONNX), "vl-classifier" (ResNet18), "lfm25-vl" (VLM)
 
 
 class ComplexityClassifier:
@@ -144,6 +146,9 @@ class ComplexityClassifier:
         """
         Run complexity classification on image.
 
+        Tries CLIP zero-shot classifier first (clip-classifier), falls back to
+        ResNet18 ONNX (vl-classifier) if CLIP is unavailable.
+
         Args:
             image: PIL Image
 
@@ -157,49 +162,80 @@ class ComplexityClassifier:
                 'latency_ms': float
             }
         """
-        # Get model from manager (handles lazy loading and unloading)
         from src.model_manager import get_model_manager
-        session = get_model_manager().get_model("vl-classifier")
+        manager = get_model_manager()
+
+        # ── CLIP zero-shot (primary) ──────────────────────────────────────────
+        if "clip-classifier" in manager.configs:
+            try:
+                clip_model = manager.get_model("clip-classifier")
+                result = clip_model.predict(image)
+
+                # Map CLIP labels to routing labels: SIMPLE→LOW, COMPLEX→HIGH
+                clip_name = result["class_name"]
+                class_name = "LOW" if clip_name == "SIMPLE" else "HIGH"
+                class_id   = self.class_names.index(class_name)
+                confidence  = result["confidence"]
+                clip_probs  = result["probabilities"]
+
+                routing = (
+                    "Simple document - Route to OCR pipeline (~100ms)"
+                    if class_name == "LOW"
+                    else "Complex document - Route to VLM reasoning pipeline (~2000ms)"
+                )
+
+                logger.info(
+                    f"CLIP classified: {clip_name}→{class_name} "
+                    f"({confidence*100:.1f}%) - {result['latency_ms']:.1f}ms"
+                )
+
+                return {
+                    "class_name":  class_name,
+                    "class_id":    class_id,
+                    "confidence":  confidence,
+                    "probabilities": {
+                        "LOW":  clip_probs.get("SIMPLE", 0.0),
+                        "HIGH": clip_probs.get("COMPLEX", 0.0),
+                    },
+                    "routing_decision": routing,
+                    "latency_ms": result["latency_ms"],
+                }
+            except Exception as e:
+                logger.warning(f"CLIP classifier failed, falling back to ResNet18: {e}")
+
+        # ── ResNet18 ONNX fallback ────────────────────────────────────────────
+        session = manager.get_model("vl-classifier")
 
         start_time = time.perf_counter()
+        img_array  = self._preprocess_image(image)
+        outputs    = session.run(None, {"input": img_array})[0]
 
-        # Preprocess image
-        img_array = self._preprocess_image(image)
-
-        # Run ONNX inference
-        outputs = session.run(None, {'input': img_array})[0]
-
-        # Softmax to get probabilities
         exp_outputs = np.exp(outputs[0] - np.max(outputs[0]))
-        probs = exp_outputs / np.sum(exp_outputs)
+        probs       = exp_outputs / np.sum(exp_outputs)
 
-        # Get prediction
-        class_id = int(np.argmax(probs))
+        class_id   = int(np.argmax(probs))
         class_name = self.class_names[class_id]
         confidence = float(probs[class_id])
-
-        # Calculate latency
         latency_ms = (time.perf_counter() - start_time) * 1000
 
-        # Routing decision
-        if class_name == "LOW":
-            routing = "Simple document - Route to OCR pipeline (~100ms)"
-        else:
-            routing = "Complex document - Route to VLM reasoning pipeline (~2000ms)"
+        routing = (
+            "Simple document - Route to OCR pipeline (~100ms)"
+            if class_name == "LOW"
+            else "Complex document - Route to VLM reasoning pipeline (~2000ms)"
+        )
 
-        # Log prediction
-        logger.info(f"Classified: {class_name} ({confidence*100:.1f}%) - {latency_ms:.1f}ms")
+        logger.info(f"ResNet18 classified: {class_name} ({confidence*100:.1f}%) - {latency_ms:.1f}ms")
 
         return {
-            'class_name': class_name,
-            'class_id': class_id,
-            'confidence': confidence,
-            'probabilities': {
-                'LOW': float(probs[0]),
-                'HIGH': float(probs[1])
+            "class_name":  class_name,
+            "class_id":    class_id,
+            "confidence":  confidence,
+            "probabilities": {
+                "LOW":  float(probs[0]),
+                "HIGH": float(probs[1]),
             },
-            'routing_decision': routing,
-            'latency_ms': latency_ms
+            "routing_decision": routing,
+            "latency_ms": latency_ms,
         }
 
 
