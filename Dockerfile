@@ -64,10 +64,9 @@ RUN uv pip install --system --no-cache -r requirements.txt
 # Copy application
 COPY src/ ./src/
 
-# Note: Complexity classifier model is included in the Docker image:
-# - ResNet18 ONNX INT8 quantized model (11MB) at src/models/complexity_classifier/model_quantized.onnx
-# - Binary classification: LOW (simple docs → OCR) vs HIGH (complex docs → VLM)
-# - Performance: 93% accuracy, 100% HIGH recall, ~10ms latency
+# Note: Models bundled in Docker image:
+# - ResNet18 ONNX INT8 (11MB) at src/models/complexity_classifier/model_quantized.onnx (legacy fallback)
+# - CLIP ViT-B/32 ONNX uint8 (153MB) at /app/local_models/clip-classifier/ (primary classifier)
 
 # Note: Embedding models will be downloaded from Hugging Face on first use (lazy loading):
 # - M2V-BGE-M3-1024D (PRIMARY) ~21MB - tss-deposium/m2v-bge-m3-1024d
@@ -105,6 +104,23 @@ tok_files = ['tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json
 [shutil.copy(hf_hub_download(repo_id='perplexity-ai/pplx-embed-v1-0.6B', filename=f, token=False), \
   f'/app/local_models/pplx-embed-v1-q4/{f}') for f in tok_files]; \
 print('PPLX-Embed-v1 Q4 ONNX pre-downloaded to /app/local_models/')"
+
+# Pre-download CLIP ViT-B/32 ONNX uint8 at build time to /app/local_models/
+# 153MB total (vision 85MB + text 62MB), zero-shot document complexity classifier
+# Text labels encoded once at startup, only vision encoder runs per image (~20ms)
+RUN mkdir -p /app/local_models/clip-classifier/onnx && \
+    python -c "\
+from huggingface_hub import hf_hub_download; \
+import shutil; \
+repo = 'Xenova/clip-vit-base-patch32'; \
+onnx_files = [('onnx/vision_model_uint8.onnx', 'onnx/vision_model_uint8.onnx'), \
+              ('onnx/text_model_uint8.onnx',   'onnx/text_model_uint8.onnx')]; \
+meta_files = ['tokenizer.json', 'tokenizer_config.json', 'preprocessor_config.json']; \
+[shutil.copy(hf_hub_download(repo_id=repo, filename=src, token=False), \
+  f'/app/local_models/clip-classifier/{dst}') for src, dst in onnx_files]; \
+[shutil.copy(hf_hub_download(repo_id=repo, filename=f, token=False), \
+  f'/app/local_models/clip-classifier/{f}') for f in meta_files]; \
+print('CLIP ViT-B/32 ONNX uint8 pre-downloaded to /app/local_models/clip-classifier/')"
 
 # Note: Running as root to allow writing to Railway volume at /app/models
 # The Railway volume is mounted with root permissions and cannot be written by non-root user

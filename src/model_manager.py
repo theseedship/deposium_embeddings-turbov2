@@ -728,10 +728,22 @@ class ModelManager:
 
             elif config.type == "onnx_clip":
                 # Load CLIP ViT-B/32 zero-shot classifier (vision + text ONNX sessions)
+                # Path resolution: Docker /app/local_models/{name} → local config.path
                 from src.clip_classifier_impl import ClipZeroShotClassifier
-                model_dir = Path(config.path)
-                if not model_dir.exists():
-                    raise ValueError(f"CLIP model directory not found: {config.path}")
+                docker_path = Path(f"/app/local_models/{name}")
+                local_path  = Path(config.path) if config.path else None
+
+                if docker_path.exists():
+                    model_dir = docker_path
+                    logger.info(f"  Loading CLIP from Docker path: {docker_path}")
+                elif local_path and local_path.exists():
+                    model_dir = local_path
+                    logger.info(f"  Loading CLIP from local path: {local_path}")
+                else:
+                    raise ValueError(
+                        f"CLIP model directory not found. "
+                        f"Docker: {docker_path}, Local: {local_path}"
+                    )
                 model = ClipZeroShotClassifier(model_dir=model_dir)
                 logger.info(f"✅ {name} loaded (CLIP zero-shot ONNX, 153MB)")
 
