@@ -96,14 +96,10 @@ class OnnxEmbeddingModel:
         # Load tokenizer (trust_remote_code for models like pplx-embed)
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
 
-        # Auto-detect output format
+        # Auto-detect output format (prefer float over quantized int8)
         output_names = [o.name for o in self.session.get_outputs()]
-        if "pooler_output_int8" in output_names:
-            # Quantized pooler output (e.g. pplx-embed Q4)
-            self.output_name = "pooler_output_int8"
-            self.needs_pooling = False
-        elif "pooler_output" in output_names:
-            # Standard pooler output (pre-pooled CLS token)
+        if "pooler_output" in output_names:
+            # Standard pooler output (pre-pooled CLS token, float32)
             self.output_name = "pooler_output"
             self.needs_pooling = False
         elif "dense_vecs" in output_names:
