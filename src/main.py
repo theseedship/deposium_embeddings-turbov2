@@ -116,7 +116,7 @@ async def initialize_models():
     logger.info("  - vl-classifier: ResNet18 complexity classifier (ONNX, 11MB, ~10ms, legacy fallback)")
 
     # Preload critical models at startup (eliminates cold-start latency)
-    preload_models = os.getenv("PRELOAD_MODELS", "pplx-embed-v1,bge-reranker-v2-m3,clip-classifier")
+    preload_models = os.getenv("PRELOAD_MODELS", "pplx-embed-v1,mxbai-rerank-v2,clip-classifier")
     if preload_models:
         for model_name in preload_models.split(","):
             model_name = model_name.strip()

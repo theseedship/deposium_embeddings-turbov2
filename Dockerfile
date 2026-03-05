@@ -31,7 +31,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Model Configuration (defaults - can be overridden at runtime)
 ENV DEFAULT_EMBEDDING_MODEL=pplx-embed-v1 \
-    DEFAULT_RERANK_MODEL=bge-reranker-v2-m3
+    DEFAULT_RERANK_MODEL=mxbai-rerank-v2
 
 # Model Cache (uses Railway volume at /app/models)
 # Note: Using only HF_HOME (TRANSFORMERS_CACHE is deprecated in transformers v5)

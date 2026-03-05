@@ -20,7 +20,7 @@ model_manager = None
 
 # Default model names from environment variables
 DEFAULT_EMBEDDING_MODEL = os.getenv("DEFAULT_EMBEDDING_MODEL", "pplx-embed-v1")
-DEFAULT_RERANK_MODEL = os.getenv("DEFAULT_RERANK_MODEL", "bge-reranker-v2-m3")
+DEFAULT_RERANK_MODEL = os.getenv("DEFAULT_RERANK_MODEL", "mxbai-rerank-v2")
 
 # Whisper availability
 try:
